@@ -1,0 +1,129 @@
+<launch>
+    <!-- 0. ARGUMENTY -->
+    <arg name="test_name" default="imrp_1_obst_1"/>
+    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/example.world"/>
+    
+    <!-- Súradnice štartu robota -->
+    <arg name="init_x" default="0.0"/>
+    <arg name="init_y" default="-6.0"/>
+    <arg name="init_z" default="0.16"/>
+    <arg name="init_yaw" default="1.572628"/>
+
+    <!-- Cieľ robota -->
+    <arg name="goal_x" default="11.421"/>
+    <arg name="goal_y" default="-0.054"/> <!-- head (x,y): 11.421 -0.054-->
+
+    <!-- <node name="rqt_robot_steering" pkg="rqt_robot_steering" type="rqt_robot_steering">
+        <param name="default_topic" value="/shoddy/cmd_vel"/>
+    </node> -->
+
+    <!-- 1. GAZEBO A ROBOT -->
+    <include file="$(find mrvk_gazebo)/launch/gazebo.launch">
+        <arg name="model" value="$(find mrvk_description)/urdf/robot.urdf.xacro"/>
+        <arg name="world_file" value="$(arg world_file)"/>
+        <arg name="init_x" value="$(arg init_x)"/>
+        <arg name="init_y" value="$(arg init_y)"/>
+        <arg name="init_z" value="$(arg init_z)"/>
+        <arg name="init_yaw" value="$(arg init_yaw)"/>
+    </include>
+
+    <!-- 2. EKF LOCALIZATION (Fúzia kolies a IMU) -->
+    <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se" clear_params="true">
+        <rosparam command="load" file="$(find mrvk_gazebo)/config/ekf.yaml" />
+        <remap from="odometry/wheel" to="/shoddy/odom"/> 
+        <remap from="imu/data" to="/imu/data"/>
+    </node>
+
+    <!-- 3. FILTRÁCIA LASERA (Self Filter) -->
+    <node pkg="laser_filters" type="scan_to_scan_filter_chain" name="laser_self_filter">
+      <remap from="scan" to="/scan"/>
+      <remap from="scan_filtered" to="/scan_filtered"/>
+      <rosparam file="$(find mrvk_gazebo)/config/costmap/laser_self_filter.yaml" command="load"/>
+    </node>
+
+    <!-- 4. DETEKCIA PREKÁŽOK (Obstacle Detector) -->
+    <node name="scans_merger" pkg="obstacle_detector" type="scans_merger_node">
+        <param name="active"            value="true"/>
+        <param name="publish_scan"      value="false"/>
+        <param name="publish_pcl"       value="true"/>
+        <param name="ranges_num"        value="1000"/>
+        <param name="min_scanner_range" value="0.05"/>
+        <param name="max_scanner_range" value="4.5"/>
+        <param name="fixed_frame_id"    value="odom"/> 
+        <param name="target_frame_id"   value="odom"/> <!-- OPRAVENÉ z oodm -->
+        <remap from="scan" to="/scan_filtered"/>
+    </node>
+
+    <node name="obstacle_extractor" pkg="obstacle_detector" type="obstacle_extractor_node">
+        <param name="active"               value="true"/>
+        <param name="use_scan"             value="true"/>
+        <param name="min_group_points"     value="3"/>
+        <param name="max_group_distance"   value="0.2"/>
+        <param name="max_circle_radius"    value="0.6"/>
+        <param name="frame_id"             value="odom"/>
+        <remap from="scan" to="/scan_filtered"/>
+    </node>
+
+    <node name="obstacle_tracker" pkg="obstacle_detector" type="obstacle_tracker_node">
+        <param name="active"                  value="true"/>
+        <param name="loop_rate"               value="100.0"/>
+        <param name="tracking_duration"       value="2.0"/>
+        <param name="frame_id"                value="odom"/>
+        <remap from="tracked_obstacles" to="obstacles"/>
+    </node>
+
+    <!-- 5. SCAN CLEANER (Vlastný C++ uzol) -->
+    <node pkg="dynamic_filter" type="scan_cleaner_node" name="scan_cleaner_node" output="screen">
+        <remap from="/scan" to="/scan_filtered"/>
+        <remap from="/scan_filtered" to="/scan_cleaned"/>
+    </node>
+
+    <!-- 6. SLAM TOOLBOX (Mapovanie) -->
+    <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+      <rosparam command="load" file="$(find mrvk_gazebo)/config/slam/slam_toolbox_params.yaml" />
+      <param name="odom_frame" value="odom"/>      
+      <param name="map_frame" value="map"/>
+      <param name="base_frame" value="base_link"/> 
+      <remap from="scan" to="/scan_cleaned"/>
+      <remap from="odom" to="/odometry/filtered"/>       
+    </node>
+
+    <!-- 7. NAVIGÁCIA (Move Base) -->
+    <node pkg="move_base" type="move_base" name="move_base" output="screen">
+        <rosparam file="$(find mrvk_gazebo)/config/costmap/costmap_common.yaml" command="load" ns="global_costmap" />
+        <rosparam file="$(find mrvk_gazebo)/config/costmap/costmap_common.yaml" command="load" ns="local_costmap" />
+        <rosparam file="$(find mrvk_gazebo)/config/costmap/local_costmap.yaml" command="load" />
+        <rosparam file="$(find mrvk_gazebo)/config/costmap/global_costmap.yaml" command="load" />
+        <rosparam file="$(find mrvk_gazebo)/config/navigation/move_base.yaml" command="load"/>
+        <rosparam file="$(find mrvk_gazebo)/config/navigation/improved_dwa_params.yaml" command="load" />
+        <remap from="/cmd_vel" to="/shoddy/cmd_vel"/>
+        <remap from="odom" to="/odometry/filtered"/>  
+        <remap from="scan" to="/scan_filtered"/> <!-- Tu musí vidieť prekážku -->
+    </node>
+
+<!-- 8. SFÉRY (Spawn dvoch objektov) -->
+    <param name="sphere_description" type="string" value="
+      &lt;robot name=&quot;moving_sphere&quot;&gt;
+        &lt;link name=&quot;base_link&quot;&gt;
+          &lt;visual&gt;&lt;geometry&gt;&lt;sphere radius=&quot;0.3&quot;/&gt;&lt;/geometry&gt;&lt;material name=&quot;red&quot;&gt;&lt;color rgba=&quot;1 0 0 1&quot;/&gt;&lt;/material&gt;&lt;/visual&gt;
+          &lt;collision&gt;&lt;geometry&gt;&lt;sphere radius=&quot;0.3&quot;/&gt;&lt;/geometry&gt;&lt;/collision&gt;
+          &lt;inertial&gt;&lt;mass value=&quot;1.0&quot;/&gt;&lt;inertia ixx=&quot;0.01&quot; ixy=&quot;0&quot; ixz=&quot;0&quot; iyy=&quot;0.01&quot; iyz=&quot;0&quot; izz=&quot;0.01&quot;/&gt;&lt;/inertial&gt;
+        &lt;/link&gt;
+        &lt;gazebo reference=&quot;base_link&quot;&gt;&lt;material&gt;Gazebo/Red&lt;/material&gt;&lt;/gazebo&gt;
+      &lt;/robot&gt;" />    
+
+    <!-- Sféra 1 (Y = 0.0) -->
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_1"
+          args="-urdf -model moving_sphere -param sphere_description -x 2.0 -y 0.0 -z 0.3" />
+
+    <node pkg="mrvk_gazebo" type="move_sphere.py" name="move_sphere_controller" output="screen" />
+
+    <!-- Sféra 2 (Y = 1.5m pred prvou)
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_2"
+          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" /> -->
+
+    <!-- <node pkg="mrvk_gazebo" type="run_head_of_obstacles.py" name="experiment_master" output="screen">
+        <param name="goal_x" value="$(arg goal_x)" />
+        <param name="goal_y" value="$(arg goal_y)" />
+    </node>  -->
+</launch>

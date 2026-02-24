@@ -1,0 +1,70 @@
+<launch>
+  <!-- ======================= АРГУМЕНТЫ ======================= -->
+  <arg name="use_gui" default="true"/>
+  <arg name="model" default="$(find my_robot_navigation)/description/urdf/robot.urdf.xacro"/>
+  <arg name="world_file" default="$(find my_robot_navigation)/gazebo/worlds/empty.world"/>
+  <arg name="init_x" default="0.0"/>
+  <arg name="init_y" default="0.0"/>
+  <arg name="init_yaw" default="0.0"/>
+
+  <!-- ======================= ОБЩИЕ ПАРАМЕТРЫ ======================= -->
+  <param name="/use_sim_time" value="true"/>
+
+  <!-- ======================= GAZEBO & СПАВН РОБОТА ======================= -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world_file)"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="$(arg use_gui)"/>
+  </include>
+  <param name="robot_description" command="$(find xacro)/xacro '$(arg model)'" />
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_urdf"
+        args="-param robot_description -urdf -model my_robot -x $(arg init_x) -y $(arg init_y) -Y $(arg init_yaw)"/>
+
+  <!-- ======================= БАЗОВЫЕ УЗЛЫ (TF и ОДОМЕТРИЯ) ======================= -->
+<!-- СТАЛО (правильно) -->
+<node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" />  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se" clear_params="true">
+    <rosparam command="load" file="$(find my_robot_navigation)/config/ekf.yaml" />
+    <remap from="odometry/filtered" to="odom" />
+  </node>
+  
+  <!-- ======================= ФИЛЬТР ЛИДАРА ======================= -->
+  <!-- Выход этого фильтра будет топик /scan_static -->
+  <node pkg="laser_filters" type="scan_to_scan_filter_chain" name="laser_filter_for_slam">
+    <rosparam command="load" file="$(find my_robot_navigation)/config/laser_filter_config.yaml" />
+    <remap from="scan" to="scan"/> <!-- Вход: "грязный" скан -->
+    <remap from="scan_filtered" to="scan_static"/> <!-- Выход: "чистый" скан -->
+  </node>
+
+  <!-- ======================= SLAM ======================= -->
+  <!-- SLAM работает ТОЛЬКО с "чистым" сканом -->
+  <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+    <rosparam command="load" file="$(find my_robot_navigation)/config/slam_toolbox_params.yaml" />
+    <remap from="scan" to="scan_static"/> <!-- ИСПОЛЬЗУЕМ "ЧИСТЫЙ" СКАН -->
+  </node>
+
+  <!-- ======================= MOVE_BASE ======================= -->
+  <!-- Move_base загружает параметры В ПРАВИЛЬНОЙ ИЕРАРХИИ -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <!-- СНАЧАЛА общие, ПОТОМ уникальные для каждой карты -->
+    <rosparam file="$(find my_robot_navigation)/config/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find my_robot_navigation)/config/costmap_common_params.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find my_robot_navigation)/config/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find my_robot_navigation)/config/global_costmap_params.yaml" command="load" />
+    
+    <!-- Загружаем параметры планировщиков -->
+    <rosparam file="$(find my_robot_navigation)/config/move_base_params.yaml" command="load"/>
+    <rosparam file="$(find my_robot_navigation)/config/improved_dwa_params.yaml" command="load" />
+
+    <!-- Задаем начальную позу, чтобы избежать "прыжка" при старте -->
+    <param name="initial_pose_x" value="$(arg init_x)"/>
+    <param name="initial_pose_y" value="$(arg init_y)"/>
+    <param name="initial_pose_a" value="$(arg init_yaw)"/>
+
+    <remap from="cmd_vel" to="/shoddy/cmd_vel"/>
+  </node>
+  
+  <!-- ======================= ИНСТРУМЕНТЫ ======================= -->
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find my_robot_navigation)/gazebo/rviz/config.rviz"/>
+
+</launch>

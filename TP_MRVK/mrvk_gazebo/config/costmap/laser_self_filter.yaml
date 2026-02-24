@@ -1,0 +1,13 @@
+scan_filter_chain:
+  - name: robot_body_filter
+    type: laser_filters/LaserScanBoxFilter
+    params:
+      # Задаем "коробку" вокруг центра лидара, 
+      # которая соответствует размерам вашего робота.
+      # Эти значения нужно будет подобрать под вашу модель, но для начала они подойдут.
+      min_x: -0.3 
+      max_x: 0.3
+      min_y: -0.3
+      max_y: 0.3
+      # invert: false означает "удалять все, что ВНУТРИ коробки"
+      invert: false

@@ -1,0 +1,33 @@
+base_global_planner: "global_planner/GlobalPlanner"
+base_local_planner: "improved_dwa_local_planner/ImprovedDWALocalPlanner"
+GlobalPlanner:
+  use_dijkstra: false     
+  use_grid_path: true
+  lethal_cost: 253
+  neutral_cost: 50
+  cost_factor: 0.55
+  lethal_cost: 253
+  
+  allow_unknown: true
+  default_tolerance: 1.0 
+
+  visualize_potential: true
+  publish_potential: true
+  
+  old_navfn_behavior: true 
+recovery_behaviors: [{name: conservative_reset, type: clear_costmap_recovery/ClearCostmapRecovery}, 
+                     {name: rotate_recovery, type: rotate_recovery/RotateRecovery}, 
+                     {name: aggressive_reset, type: clear_costmap_recovery/ClearCostmapRecovery}]
+controller_frequency: 10.0
+planner_patience: 10.0
+controller_patience: 10.0
+conservative_reset_dist: 3.0
+recovery_behavior_enabled: true
+clearing_rotation_allowed: true
+shutdown_costmaps: false
+oscillation_timeout: 0.0
+oscillation_distance: 0.5
+planner_frequency: 5.0
+max_planning_retries: 5
+latch_xy_goal_tolerance: true
+odom_topic: /odom

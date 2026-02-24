@@ -1,0 +1,13 @@
+<!-- ======================= ИСПРАВЛЕННАЯ ВЕРСИЯ ======================= -->
+<!-- Путь теперь в точности соответствует тому, что создает CMake -->
+<library path="lib/libimproved_dwa_local_planner">
+
+  <!-- Остальная часть остается без изменений -->
+  <class name="improved_dwa_local_planner/ImprovedDWALocalPlanner"
+         type="improved_dwa_local_planner::ImprovedDWALocalPlanner"
+         base_class_type="nav_core::BaseLocalPlanner">
+    <description>
+      A DWA local planner that avoids dynamic obstacles.
+    </description>
+  </class>
+</library>

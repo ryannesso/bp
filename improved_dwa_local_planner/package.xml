@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>improved_dwa_local_planner</name>
+  <version>0.0.1</version>
+  <description>An improved DWA local planner for dynamic obstacle avoidance.</description>
+
+  <maintainer email="your_email@todo.com">Your Name</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <!-- Зависимости для Сборки -->
+  <build_depend>base_local_planner</build_depend>
+  <build_depend>costmap_2d</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>nav_core</build_depend>
+  <build_depend>pluginlib</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>tf2_ros</build_depend>
+  <build_depend>obstacle_detector</build_depend> <!-- ДОБАВЛЕНО -->
+
+  <!-- Зависимость, необходимая ДРУГИМ пакетам, чтобы использовать наши сообщения -->
+  <!-- КРАЙНЕ ВАЖНО для генерации .h файлов -->
+  <build_export_depend>obstacle_detector</build_export_depend> <!-- ДОБАВЛЕНО -->
+
+  <!-- Зависимости для Запуска -->
+  <exec_depend>base_local_planner</exec_depend>
+  <exec_depend>costmap_2d</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_core</exec_depend>
+  <exec_depend>pluginlib</exec_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>obstacle_detector</exec_depend> <!-- ДОБАВЛЕНО -->
+
+  <export>
+    <nav_core plugin="${prefix}/planner_plugins.xml" />
+  </export>
+</package>

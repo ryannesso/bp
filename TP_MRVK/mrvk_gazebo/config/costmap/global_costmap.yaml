@@ -1,0 +1,48 @@
+# ====== global_costmap_params.yaml ======
+global_costmap:
+  global_frame: map
+  
+  # --- Режим "Большой Радар" ---
+  update_frequency: 5.0
+  publish_frequency: 2.0
+  static_map: false
+  rolling_window: true
+  width: 40.0
+  height: 40.0
+  resolution: 0.05
+  inflation_radius: 1.2
+  
+  # --- Плагины ---
+  plugins:
+    - {name: static_layer,    type: "costmap_2d::StaticLayer"}
+    - {name: obstacle_layer,  type: "costmap_2d::VoxelLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+  # --- Настройки плагинов ---
+  static_layer:
+    enabled: true
+    # Этот слой будет "подхватывать" карту от SLAM, но не будет управлять размером costmap
+    map_topic: /map 
+    
+  obstacle_layer:
+    enabled: true
+    # ВАЖНО: global_costmap слушает "ЧИСТЫЙ" скан, чтобы не рисовать динамику
+    observation_sources: laser_scan_sensor
+    laser_scan_sensor: {
+      data_type: LaserScan, 
+      topic: /scan_cleaned, 
+      min_obstacle_height: 0.15,
+      max_obstacle_height: 2.0,
+      sensor_frame: sensor_laser_link,
+      marking: true, 
+      clearing: true,
+      inf_is_valid: true
+    }
+    observation_persistence: 1.0 //?
+    obstacle_range: 3.5
+    raytrace_range: 4.2
+    
+  inflation_layer:
+    enabled: true
+    inflation_radius: 1.2
+    cost_scaling_factor: 6.5

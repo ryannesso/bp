@@ -1,0 +1,45 @@
+# ================= local_costmap_params.yaml (ИСПРАВЛЕННАЯ ВЕРСИЯ) =================
+local_costmap:
+  # --- Общие параметры карты ---
+  global_frame: odom
+  robot_base_frame: base_link
+  update_frequency: 6.0
+  publish_frequency: 5.0
+  static_map: false
+  rolling_window: true
+  width: 8.0
+  height: 8.0
+  resolution: 0.1
+  transform_tolerance: 0.8 # Рекомендуется добавить
+
+  # --- Список Плагинов ---
+  plugins:
+    # Имя плагина здесь должно совпадать с именем блока настроек ниже
+    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+  # --- Настройки для СЛОЯ ПРЕПЯТСТВИЙ (на том же уровне, что и plugins) ---
+  obstacle_layer:
+    enabled: true
+    # Источник данных для построения карты препятствий
+    observation_sources: laser_scan_sensor
+    # Настройки для источника "laser_scan_sensor"
+    laser_scan_sensor: {
+      sensor_frame: sensor_laser_link, 
+      data_type: LaserScan, 
+      topic: /scan_filtered, 
+      min_obstacle_height: 0.0,
+      max_obstacle_height: 2.0,
+      marking: true, 
+      clearing: true, 
+      inf_is_valid: true
+    }
+    # Параметр, убирающий задержку
+    observation_persistence: 0.0
+    obstacle_range: 3.5
+    raytrace_range: 4.0
+  # --- Настройки для СЛОЯ ИНФЛЯЦИИ (на том же уровне, что и plugins) ---
+  inflation_layer:
+    enabled: true
+    inflation_radius: 0.55
+    cost_scaling_factor: 5.0
