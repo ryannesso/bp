@@ -17,6 +17,14 @@ odom0_config: [false, false, false,
                false, false, false]
 odom0_differential: false
 odom0_relative: false
+# Матрица коварианции ошибок одометрии - УВЕЛИЧЕНА для стабилизации
+odom0_covariance: [1.0,  0,    0,    0,     0,     0,
+                   0,    1.0,  0,    0,     0,     0,
+                   0,    0,    1.0,  0,     0,     0,
+                   0,    0,    0,    0.3,   0,     0,    # Roll
+                   0,    0,    0,    0,     0.3,   0,    # Pitch
+                   0,    0,    0,    0,     0,     0.1]  # Yaw - МЕНЬШЕ ошибок, т.к. IMU помогает
+odom0_covariance_diagonal: [1.0, 1.0, 1.0, 0.3, 0.3, 0.1]
 
 # === ИСТОЧНИК 2: ГИРОСКОП И АКСЕЛЕРОМЕТР (IMU) ===
 imu0: /imu/data 
@@ -29,3 +37,11 @@ imu0_config: [false, false, false,
 imu0_differential: false
 imu0_relative: true
 imu0_remove_gravitational_acceleration: true # Чтобы гравитация не сбивала акселерометр
+# Матрица коварианции для IMU - НИЗКИЕ значения, т.к. IMU надежнее
+imu0_covariance: [0.01, 0,     0,     0,    0,     0,
+                  0,    0.01,  0,     0,    0,     0,
+                  0,    0,     0.01,  0,    0,     0,
+                  0,    0,     0,     0.01, 0,     0,
+                  0,    0,     0,     0,    0.01,  0,
+                  0,    0,     0,     0,    0,     0.01]
+imu0_covariance_diagonal: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]

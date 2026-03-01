@@ -76,6 +76,11 @@
     <node pkg="dynamic_filter" type="scan_cleaner_node" name="scan_cleaner_node" output="screen">
         <remap from="/scan" to="/scan_filtered"/>
         <remap from="/scan_filtered" to="/scan_cleaned"/>
+        <!-- Оптимизированные параметры для стабилизации без статики -->
+        <param name="speed_threshold" value="0.08"/>      <!-- Меньше порог скорости -->
+        <param name="ttl_duration" value="0.5"/>          <!-- Короче время жизни призраков -->
+        <param name="radius_buffer" value="0.35"/>        <!-- Меньше буффер очистки -->
+        <param name="proximity_threshold" value="0.3"/>   <!-- Порог соседства для объектов -->
     </node>
 
     <!-- 6. SLAM TOOLBOX (Mapovanie) -->

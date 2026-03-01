@@ -32,10 +32,11 @@ public:
   ScanCleaner() {
     ros::NodeHandle pnh("~");
 
-    // Параметры
-    pnh.param("speed_threshold", speed_threshold_, 0.1); // м/с
-    pnh.param("ttl_duration", ttl_duration_, 1.0);       // сек
-    pnh.param("radius_buffer", radius_buffer_, 0.45);    // запас вырезания
+    // Параметры - ОПТИМИЗИРОВАНЫ для стабильности без статики
+    pnh.param("speed_threshold", speed_threshold_, 0.08); // м/с - НИЖЕ порог, чтобы не пропускать медленные объекты
+    pnh.param("ttl_duration", ttl_duration_, 0.5);        // сек - МЕНЬШЕ время жизни призраков
+    pnh.param("radius_buffer", radius_buffer_, 0.35);     // МЕНЬШЕ буффер для более точной очистки
+    pnh.param("proximity_threshold", proximity_threshold_, 0.3); // расстояние для определения "соседства"
 
     // Подписки
     scan_sub_ = nh_.subscribe("/scan", 1, &ScanCleaner::scanCallback, this);
@@ -44,8 +45,8 @@ public:
     filtered_pub_ = nh_.advertise<sensor_msgs::LaserScan>("/scan_cleaned", 1);
 
     has_obstacles_ = false;
-    ROS_INFO("ScanCleaner: Node initialized. Speed Thresh: %.2f, Buffer: %.2f",
-             speed_threshold_, radius_buffer_);
+    ROS_INFO("ScanCleaner: Node initialized. Speed Thresh: %.2f, Buffer: %.2f, TTL: %.2f",
+             speed_threshold_, radius_buffer_, ttl_duration_);
   }
 
 private:
@@ -58,6 +59,7 @@ private:
   double speed_threshold_;
   double ttl_duration_;
   double radius_buffer_;
+  double proximity_threshold_; // Новый параметр для проверки соседства
 
   obstacle_detector::Obstacles latest_obs_msg_;
   std::map<int32_t, DynamicObject> object_db_;
