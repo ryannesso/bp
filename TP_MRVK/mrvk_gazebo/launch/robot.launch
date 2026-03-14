@@ -1,7 +1,7 @@
 <launch>
     <!-- 0. ARGUMENTY -->
     <arg name="test_name" default="imrp_1_obst_1"/>
-    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/example.world"/>
+    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/baylands.sdf"/>
     
     <!-- Súradnice štartu robota -->
     <arg name="init_x" default="0.0"/>
@@ -13,9 +13,9 @@
     <arg name="goal_x" default="11.421"/>
     <arg name="goal_y" default="-0.054"/> <!-- head (x,y): 11.421 -0.054-->
 
-    <!-- <node name="rqt_robot_steering" pkg="rqt_robot_steering" type="rqt_robot_steering">
+    <node name="rqt_robot_steering" pkg="rqt_robot_steering" type="rqt_robot_steering">
         <param name="default_topic" value="/shoddy/cmd_vel"/>
-    </node> -->
+    </node>
 
     <!-- 1. GAZEBO A ROBOT -->
     <include file="$(find mrvk_gazebo)/launch/gazebo.launch">
@@ -91,6 +91,9 @@
       <param name="base_frame" value="base_link"/> 
       <remap from="scan" to="/scan_cleaned"/>
       <remap from="odom" to="/odometry/filtered"/>       
+    </node>
+
+    <node pkg="path_detector" type="path_detection" name="path_detector" output="screen">
     </node>
 
     <!-- 7. NAVIGÁCIA (Move Base) -->

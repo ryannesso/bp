@@ -14,15 +14,17 @@ local_costmap:
 
   # --- Список Плагинов ---
   plugins:
-    # Имя плагина здесь должно совпадать с именем блока настроек ниже
+    # Имя плагина здесь должно совпадать с именем блока настроек  plugins:
     - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
+    # path_layer отключен - использует velocity scaling вместо phantom obstacles
+    # - {name: path_layer,      type: "costmap_2d::ObstacleLayer"}
     - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
 
   # --- Настройки для СЛОЯ ПРЕПЯТСТВИЙ (на том же уровне, что и plugins) ---
   obstacle_layer:
     enabled: true
     # Источник данных для построения карты препятствий
-    observation_sources: laser_scan_sensor
+    observation_sources: laser_scan_sensor grass_cloud
     # Настройки для источника "laser_scan_sensor"
     laser_scan_sensor: {
       sensor_frame: sensor_laser_link, 
@@ -34,6 +36,16 @@ local_costmap:
       clearing: true, 
       inf_is_valid: true
     }
+    # Настройки для источника "grass_cloud" (с камеры)
+    grass_cloud: {
+      sensor_frame: base_link, 
+      data_type: PointCloud2, 
+      topic: /path_detector/grass_cloud, 
+      marking: true, 
+      clearing: true, 
+      min_obstacle_height: -0.1, 
+      max_obstacle_height: 0.5
+    }
     # Параметр, убирающий задержку
     observation_persistence: 0.0
     obstacle_range: 3.5
@@ -43,3 +55,8 @@ local_costmap:
     enabled: true
     inflation_radius: 0.55
     cost_scaling_factor: 5.0
+
+  # path_layer ОТКЛЮЧЕН - используем velocity scaling через dynamic_reconfigure
+  # Детекция дороги ограничивает скорость DWA, а не добавляет препятствия
+  # path_layer:
+  #   enabled: false
