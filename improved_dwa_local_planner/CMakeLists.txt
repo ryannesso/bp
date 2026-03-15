@@ -6,19 +6,18 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   pluginlib
   nav_core
+  nav_msgs
   base_local_planner
   costmap_2d
   geometry_msgs
   tf2_ros
-  obstacle_detector # <-- ДОБАВЛЕНО
+  obstacle_detector
 )
-# Примечание: tf2_geometry_msgs не нужно искать отдельно, catkin его найдет
 
-# === ШАГ 2: Добавляем 'obstacle_detector' в зависимости catkin ===
 catkin_package(
   INCLUDE_DIRS include 
   LIBRARIES improved_dwa_local_planner
-  CATKIN_DEPENDS roscpp pluginlib nav_core base_local_planner costmap_2d geometry_msgs tf2_ros obstacle_detector
+  CATKIN_DEPENDS roscpp pluginlib nav_core nav_msgs base_local_planner costmap_2d geometry_msgs tf2_ros obstacle_detector
 )
 
 include_directories(

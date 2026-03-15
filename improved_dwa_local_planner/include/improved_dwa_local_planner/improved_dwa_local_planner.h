@@ -7,7 +7,9 @@
 #include <costmap_2d/costmap_2d_ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
+#include <mutex>
 #include <nav_core/base_local_planner.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/Path.h>
 #include <ros/ros.h>
 #include <tf2_ros/buffer.h>
@@ -76,8 +78,14 @@ private:
   ros::Publisher collision_markers_pub_; // Визуализация точек коллизий
   ros::Publisher tracked_objects_pub_;   // Vizualizácia dynamických objektov
   ros::Subscriber obstacles_sub_; // Подписчик на динамические препятствия
+  ros::Subscriber road_grid_sub_; // Подписчик на карту не-дорожных областей
   obstacle_detector::Obstacles
       last_obstacles_; // Хранилище для последних увиденных препятствий
+
+  // --- ДАННЫЕ О ДОРОГЕ ОТ КАМЕРЫ ---
+  nav_msgs::OccupancyGrid::ConstPtr road_grid_; // последняя карта дороги
+  std::mutex road_grid_mutex_;
+  void roadGridCallback(const nav_msgs::OccupancyGrid::ConstPtr &msg);
 
   // --- ПАРАМЕТРЫ, ЗАГРУЖАЕМЫЕ ИЗ YAML ---
   // Веса для оценочной функции
@@ -86,6 +94,7 @@ private:
   double gamma_;   // velocity_cost (предпочтение высокой скорости)
   double kappa_;   // Вес для dis_hv
   double epsilon_; // Вес для dis_fp
+  double zeta_;    // Штраф за движение через не-дорожные зоны (камера)
 
   // Ограничения
   double max_vel_x_, min_vel_x_, max_vel_th_;

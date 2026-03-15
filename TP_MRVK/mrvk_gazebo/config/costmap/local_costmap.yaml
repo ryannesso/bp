@@ -53,8 +53,8 @@ local_costmap:
   # --- Настройки для СЛОЯ ИНФЛЯЦИИ (на том же уровне, что и plugins) ---
   inflation_layer:
     enabled: true
-    inflation_radius: 0.55
-    cost_scaling_factor: 5.0
+    inflation_radius: 1.0
+    cost_scaling_factor: 2.0
 
   # path_layer ОТКЛЮЧЕН - используем velocity scaling через dynamic_reconfigure
   # Детекция дороги ограничивает скорость DWA, а не добавляет препятствия

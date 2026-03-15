@@ -1,7 +1,7 @@
 <launch>
     <!-- 0. ARGUMENTY -->
     <arg name="test_name" default="imrp_1_obst_1"/>
-    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/baylands.sdf"/>
+    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/baylands.world"/>
     
     <!-- Súradnice štartu robota -->
     <arg name="init_x" default="0.0"/>
@@ -83,18 +83,36 @@
         <param name="proximity_threshold" value="0.3"/>   <!-- Порог соседства для объектов -->
     </node>
 
+    <!-- Grass PointCloud to LaserScan -->
+    <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="grass_to_laserscan" output="screen">
+        <remap from="cloud_in" to="/path_detector/grass_cloud"/>
+        <remap from="scan" to="/grass_scan"/>
+        <param name="target_frame" value="base_link"/>
+        <param name="range_min" value="0.1"/>
+        <param name="range_max" value="5.0"/>
+    </node>
+
+    <!-- Scan Merger -->
+    <node pkg="mrvk_gazebo" type="scan_merger.py" name="scan_merger_node" output="screen" />
+
     <!-- 6. SLAM TOOLBOX (Mapovanie) -->
     <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
       <rosparam command="load" file="$(find mrvk_gazebo)/config/slam/slam_toolbox_params.yaml" />
       <param name="odom_frame" value="odom"/>      
       <param name="map_frame" value="map"/>
       <param name="base_frame" value="base_link"/> 
-      <remap from="scan" to="/scan_cleaned"/>
+      <remap from="scan" to="/scan_slam_ready"/>
       <remap from="odom" to="/odometry/filtered"/>       
     </node>
 
+    <!-- Road Detection (HSV based - OLD)  -->
     <node pkg="path_detector" type="path_detection" name="path_detector" output="screen">
     </node>
+
+    <!-- Road Detection (Neural based - NEW) -->
+    <!-- <include file="$(find road_segmentation)/launch/road_segmentation.launch">
+        <arg name="model_path" value="$(find road_segmentation)/models/hybridnets_256x512.onnx"/>
+    </include> -->
 
     <!-- 7. NAVIGÁCIA (Move Base) -->
     <node pkg="move_base" type="move_base" name="move_base" output="screen">
