@@ -4,10 +4,10 @@
     <arg name="world_file" default="$(find mrvk_gazebo)/worlds/baylands.world"/>
     
     <!-- Súradnice štartu robota -->
-    <arg name="init_x" default="0.0"/>
-    <arg name="init_y" default="-6.0"/>
-    <arg name="init_z" default="0.16"/>
-    <arg name="init_yaw" default="1.572628"/>
+    <arg name="init_x" default="-18.995439"/>
+    <arg name="init_y" default="-235.888025"/>
+    <arg name="init_z" default="-0.766392"/>
+    <arg name="init_yaw" default="-0.026155"/>
 
     <!-- Cieľ robota -->
     <arg name="goal_x" default="11.421"/>
@@ -106,13 +106,19 @@
     </node>
 
     <!-- Road Detection (HSV based - OLD)  -->
-    <node pkg="path_detector" type="path_detection" name="path_detector" output="screen">
+    <node name="path_detector" pkg="path_detector" type="path_detection" output="screen">
+        <param name="frame_id" value="base_link"/>
+        <param name="interactive_mask" value="false"/>
+        <param name="standalone_mode" value="false"/>
     </node>
 
     <!-- Road Detection (Neural based - NEW) -->
     <!-- <include file="$(find road_segmentation)/launch/road_segmentation.launch">
         <arg name="model_path" value="$(find road_segmentation)/models/hybridnets_256x512.onnx"/>
     </include> -->
+    <!-- <node pkg="explore_lite" type="explore" respawn="false" name="explore" output="screen">
+        <rosparam file="$(find mrvk_gazebo)/config/navigation/exp.yaml" command="load" />
+    </node> -->
 
     <!-- 7. NAVIGÁCIA (Move Base) -->
     <node pkg="move_base" type="move_base" name="move_base" output="screen">
@@ -124,7 +130,7 @@
         <rosparam file="$(find mrvk_gazebo)/config/navigation/improved_dwa_params.yaml" command="load" />
         <remap from="/cmd_vel" to="/shoddy/cmd_vel"/>
         <remap from="odom" to="/odometry/filtered"/>  
-        <remap from="scan" to="/scan_filtered"/> <!-- Tu musí vidieť prekážku -->
+        <!-- Note: Topics for obstacle_layer are defined in the YAML files -->
     </node>
 
 <!-- 8. SFÉRY (Spawn dvoch objektov) -->

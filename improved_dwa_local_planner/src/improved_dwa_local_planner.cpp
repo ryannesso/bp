@@ -48,12 +48,6 @@ void ImprovedDWALocalPlanner::obstaclesCallback(
   }
 }
 
-// --- Callback для получения сетки дороги от камеры ---
-void ImprovedDWALocalPlanner::roadGridCallback(
-    const nav_msgs::OccupancyGrid::ConstPtr &msg) {
-  std::lock_guard<std::mutex> lock(road_grid_mutex_);
-  road_grid_ = msg;
-}
 
 // --- Инициализация плагина ---
 void ImprovedDWALocalPlanner::initialize(
@@ -70,9 +64,6 @@ void ImprovedDWALocalPlanner::initialize(
     obstacles_sub_ = nh.subscribe(
         "/obstacles", 1, &ImprovedDWALocalPlanner::obstaclesCallback, this);
     
-    // Подписка на топик с детекцией дороги (камера)
-    road_grid_sub_ = nh.subscribe(
-        "/path_detector/road_grid", 1, &ImprovedDWALocalPlanner::roadGridCallback, this);
 
     // Издатели для визуализации и локального плана
     local_plan_pub_ = private_nh.advertise<nav_msgs::Path>("local_plan", 1);
@@ -95,7 +86,6 @@ void ImprovedDWALocalPlanner::initialize(
                      2.0); // Вес направления относительно динамических объектов
     private_nh.param("epsilon", epsilon_,
                      5.0); // Вес прогнозируемого времени до столкновения
-    private_nh.param("zeta", zeta_, 5.0); // Штраф за движение через не-дорогу
 
     // --- Физические параметры робота ---
     private_nh.param("max_vel_x", max_vel_x_, 0.8);
@@ -279,74 +269,6 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
       max_footprint_cost = pt_cost;
   }
 
-  // 1b. Проверка на движение по не-дорожным зонам (трава/камера)
-  double road_cost = 0.0;
-  {
-    std::lock_guard<std::mutex> lock(road_grid_mutex_);
-    if (road_grid_ && !traj.poses.empty()) {
-      const auto &info = road_grid_->info;
-      int hit_count = 0;
-
-      // Получаем трансформ из кадровой системы траектории (global) в систему сетки (base_link)
-      geometry_msgs::TransformStamped transform;
-      bool has_transform = false;
-      std::string global_frame = costmap_ros_->getGlobalFrameID();
-      
-      try {
-        transform = tf_->lookupTransform(road_grid_->header.frame_id, 
-                                        global_frame, 
-                                        ros::Time(0), // Берем последний доступный трансформ
-                                        ros::Duration(0.01));
-        has_transform = true;
-      } catch (tf2::TransformException &ex) {
-        ROS_WARN_THROTTLE(5.0, "Road grid transform failed: %s", ex.what());
-      }
-
-      if (has_transform) {
-        for (const auto &pose : traj.poses) {
-          // Трансформируем точку траектории в систему координат сетки (base_link)
-          geometry_msgs::PoseStamped pose_in;
-          geometry_msgs::PoseStamped pose_local;
-          pose_in.header.frame_id = global_frame;
-          pose_in.header.stamp = ros::Time(0);
-          // Проверяем не только центр, но и 4 угла робота (footprint)
-          // Примерные размеры: +/- 0.3м по X, +/- 0.4м по Y
-          std::vector<std::pair<double, double>> footprint_offsets = {
-            {0.0, 0.0},   // Центр
-            {0.3, 0.4},   // Передний левый
-            {0.3, -0.4},  // Передний правый
-            {-0.3, 0.4},  // Задний левый
-            {-0.3, -0.4}  // Задний правый
-          };
-
-          for (const auto& offset : footprint_offsets) {
-            geometry_msgs::PoseStamped pose_in;
-            geometry_msgs::PoseStamped pose_local;
-            pose_in.header.frame_id = global_frame;
-            pose_in.header.stamp = ros::Time(0);
-            
-            // Смещение в системе координат траектории (global)
-            double yaw = tf2::getYaw(pose.pose.orientation);
-            pose_in.pose.position.x = pose.pose.position.x + offset.first * cos(yaw) - offset.second * sin(yaw);
-            pose_in.pose.position.y = pose.pose.position.y + offset.first * sin(yaw) + offset.second * cos(yaw);
-            pose_in.pose.orientation = pose.pose.orientation;
-
-            tf2::doTransform(pose_in, pose_local, transform);
-
-            int my = (int)((pose_local.pose.position.x - info.origin.position.x) / info.resolution);
-            int mx = (int)((pose_local.pose.position.y - info.origin.position.y) / info.resolution);
-            
-            if (mx >= 0 && mx < (int)info.width && my >= 0 && my < (int)info.height) {
-              int idx = my * info.width + mx;
-              if (road_grid_->data[idx] > 50) { 
-                return -1.0; // Любая часть корпуса на траве = отказ
-              }
-            }
-          }
-        }
-      }
-    }
-  }
 
   geometry_msgs::PoseStamped robot_pose;
   costmap_ros_->getRobotPose(robot_pose);

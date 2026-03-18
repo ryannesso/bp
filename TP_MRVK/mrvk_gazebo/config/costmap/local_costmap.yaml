@@ -1,4 +1,3 @@
-# ================= local_costmap_params.yaml (ИСПРАВЛЕННАЯ ВЕРСИЯ) =================
 local_costmap:
   # --- Общие параметры карты ---
   global_frame: odom
@@ -10,53 +9,28 @@ local_costmap:
   width: 8.0
   height: 8.0
   resolution: 0.1
-  transform_tolerance: 0.8 # Рекомендуется добавить
+  transform_tolerance: 0.8
 
   # --- Список Плагинов ---
+  # InflationLayer раздувает только то, что было добавлено ПРЕДЫДУЩИМИ слоями.
+  # Поэтому мы ставим инфляцию лазера выше, чем инфляцию дороги.
   plugins:
-    # Имя плагина здесь должно совпадать с именем блока настроек  plugins:
-    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
-    # path_layer отключен - использует velocity scaling вместо phantom obstacles
-    # - {name: path_layer,      type: "costmap_2d::ObstacleLayer"}
-    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}  # Лазер
+    - {name: laser_inflation, type: "costmap_2d::InflationLayer"} # Раздутие лазера (сильное)
+    - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (облако точек)
+    - {name: road_layer,      type: "costmap_2d::StaticLayer"}    # Дорога (сетка)
+    - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие дороги/травы (слабое)
 
-  # --- Настройки для СЛОЯ ПРЕПЯТСТВИЙ (на том же уровне, что и plugins) ---
-  obstacle_layer:
+  # --- Настройки инфляции для ЛАЗЕРА ---
+  laser_inflation:
     enabled: true
-    # Источник данных для построения карты препятствий
-    observation_sources: laser_scan_sensor grass_cloud
-    # Настройки для источника "laser_scan_sensor"
-    laser_scan_sensor: {
-      sensor_frame: sensor_laser_link, 
-      data_type: LaserScan, 
-      topic: /scan_filtered, 
-      min_obstacle_height: 0.0,
-      max_obstacle_height: 2.0,
-      marking: true, 
-      clearing: true, 
-      inf_is_valid: true
-    }
-    # Настройки для источника "grass_cloud" (с камеры)
-    grass_cloud: {
-      sensor_frame: base_link, 
-      data_type: PointCloud2, 
-      topic: /path_detector/grass_cloud, 
-      marking: true, 
-      clearing: true, 
-      min_obstacle_height: -0.1, 
-      max_obstacle_height: 0.5
-    }
-    # Параметр, убирающий задержку
-    observation_persistence: 0.0
-    obstacle_range: 3.5
-    raytrace_range: 4.0
-  # --- Настройки для СЛОЯ ИНФЛЯЦИИ (на том же уровне, что и plugins) ---
-  inflation_layer:
-    enabled: true
-    inflation_radius: 1.0
-    cost_scaling_factor: 2.0
+    inflation_radius: 0.8    # Большой отступ от стен
+    cost_scaling_factor: 3.0
 
-  # path_layer ОТКЛЮЧЕН - используем velocity scaling через dynamic_reconfigure
-  # Детекция дороги ограничивает скорость DWA, а не добавляет препятствия
-  # path_layer:
-  #   enabled: false
+  # --- Настройки инфляции для ДОРОГИ ---
+  road_inflation:
+    enabled: true
+    inflation_radius: 0.3    # Маленький отступ от края дороги
+    cost_scaling_factor: 10.0
+
+  # Настройки слоев подхватываются из costmap_common.yaml по именам

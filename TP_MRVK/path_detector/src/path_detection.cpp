@@ -8,16 +8,16 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <ros/ros.h>
+#include <sensor_msgs/Image.h>
 #include <sensor_msgs/LaserScan.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/Header.h>
 #include <vector>
 
-static const std::string OPENCV_WINDOW = "Path Detection";
-static const std::string MASK_WINDOW = "Mask Output";
-static const std::string TUNING_WINDOW = "Mask Tuning";
+// GUI windows removed
 
 // --- Вспомогательные структуры ---
 
@@ -158,9 +158,10 @@ class ImageConverter {
   ros::Publisher cmd_pub_;
   ros::Publisher costmap_pub_;
   ros::Publisher scan_pub_;
-  ros::Publisher passability_pub_; // публикует passability для мониторинга
-  ros::Publisher road_grid_pub_; // публикует сетку дороги (0=дорога, 100=трава)
-  ros::Publisher grass_pc_pub_;  // публикует PointCloud2 травы для Costmap
+  ros::Publisher passability_pub_;
+  ros::Publisher road_grid_pub_;
+  ros::Publisher grass_pc_pub_;
+  image_transport::Publisher mask_image_pub_;
 
   FieldOfVision fov_, op_area_;
   Controller controller_;
@@ -172,8 +173,8 @@ class ImageConverter {
 
   int mask_lb_x, mask_rb_x, mask_lt_x, mask_rt_x, mask_t_y, mask_b_y;
   bool interactive_mask_;
-  bool standalone_mode_; // true = сам управляет роботом, false = только данные
-                         // для DWA
+  bool standalone_mode_;
+  double blind_zone_;
 
 public:
   ros::Time last_image_time;
@@ -182,20 +183,15 @@ public:
   ImageConverter() : it_(nh_), initialized_(false), K_COLORS(2) {
     last_image_time = ros::Time::now();
     cmd_pub_ = nh_.advertise<geometry_msgs::Twist>("/shoddy/cmd_vel", 1);
-    costmap_pub_ =
-        nh_.advertise<nav_msgs::OccupancyGrid>("/path_detector/costmap", 1);
+    costmap_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("/path_detector/costmap", 1);
     scan_pub_ = nh_.advertise<sensor_msgs::LaserScan>("/path_detector/scan", 1);
-    passability_pub_ =
-        nh_.advertise<std_msgs::Float32>("/path_detector/passability", 1);
-    road_grid_pub_ =
-        nh_.advertise<nav_msgs::OccupancyGrid>("/path_detector/road_grid", 1);
-    grass_pc_pub_ =
-        nh_.advertise<sensor_msgs::PointCloud2>("/path_detector/grass_cloud", 1);
+    passability_pub_ = nh_.advertise<std_msgs::Float32>("/path_detector/passability", 1);
+    road_grid_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("/path_detector/road_grid", 1);
+    grass_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/path_detector/grass_cloud", 1);
+    mask_image_pub_ = it_.advertise("/path_detector/mask", 1);
 
     offset_lower_ = cv::Vec3i(15, 25, 55);
     offset_upper_ = cv::Vec3i(15, 25, 55);
-
-    ROS_INFO("[PathDetector] Node starting...");
 
     ros::NodeHandle pnh("~");
     pnh.param("mask_lb_x", mask_lb_x, 0);
@@ -207,45 +203,18 @@ public:
     pnh.param("interactive_mask", interactive_mask_, true);
     pnh.param<std::string>("frame_id", frame_id_param, "odom");
     pnh.param("standalone_mode", standalone_mode_, false);
+    pnh.param("blind_zone", blind_zone_, 0.7);
 
-    if (standalone_mode_) {
-      ROS_WARN("[PathDetector] STANDALONE MODE: publishing cmd_vel directly.");
-    } else {
-      ROS_WARN("[PathDetector] DWA MODE: Publishing /path_detector/road_grid "
-               "for ImprovedDWA.");
-    }
-
-    if (interactive_mask_) {
-      try {
-        cv::namedWindow(TUNING_WINDOW);
-        cv::createTrackbar("LB X %", TUNING_WINDOW, &mask_lb_x, 100);
-        cv::createTrackbar("RB X %", TUNING_WINDOW, &mask_rb_x, 100);
-        cv::createTrackbar("LT X %", TUNING_WINDOW, &mask_lt_x, 100);
-        cv::createTrackbar("RT X %", TUNING_WINDOW, &mask_rt_x, 100);
-        cv::createTrackbar("Top Y %", TUNING_WINDOW, &mask_t_y, 100);
-        cv::createTrackbar("Bot Y %", TUNING_WINDOW, &mask_b_y, 100);
-      } catch (...) {
-        ROS_WARN("[PathDetector] Could not create GUI windows. Running in "
-                 "non-interactive mode.");
-        interactive_mask_ = false;
-      }
-    }
-
-    // Подписываемся в последнюю очередь
-    image_sub_ =
-        it_.subscribe("/camera/image_raw", 1, &ImageConverter::imageCb, this);
-    ROS_INFO("[PathDetector] Initialization finished. Waiting for images on "
-             "/camera/image_raw...");
+    image_sub_ = it_.subscribe("/camera/image_raw", 1, &ImageConverter::imageCb, this);
+    ROS_INFO("[PathDetector] Unified node started. Frame ID: %s", frame_id_param.c_str());
   }
 
   void initialize(const cv::Mat &img, bool mark_initialized = true) {
     cv::Size size = img.size();
-
     float h_fov = size.height * (mask_b_y - mask_t_y) / 100.0;
     int lw = size.width * (mask_rb_x - mask_lb_x) / 100.0;
     int uw = size.width * (mask_rt_x - mask_lt_x) / 100.0;
-    float x_off =
-        size.width * (mask_lb_x + mask_rb_x) / 200.0 - size.width / 2.0;
+    float x_off = size.width * (mask_lb_x + mask_rb_x) / 200.0 - size.width / 2.0;
     float y_off = size.height * (100 - mask_b_y) / 100.0;
 
     fov_.init(size, lw, uw, (int)h_fov, x_off, y_off);
@@ -253,105 +222,58 @@ public:
 
     int rect_h = size.height / 9;
     int rect_w = size.width * 2 / 9;
-    // Ограничиваем ROI границами изображения
     int roi_x = std::max(0, (int)(size.width / 2 - rect_w / 2));
-    int roi_y = std::max(0, (int)(size.height - rect_h));
+    int roi_y = std::max(0, (int)(size.height - rect_h * 2));
     int roi_w = std::min((int)rect_w, size.width - roi_x);
     int roi_h = std::min((int)rect_h, size.height - roi_y);
 
     if (roi_w <= 0 || roi_h <= 0) {
-      ROS_WARN(
-          "[PathDetector] ROI for color sampling is empty, skipping kmeans.");
-      if (mark_initialized)
-        initialized_ = true;
+      if (mark_initialized) initialized_ = true;
       return;
     }
 
     cv::Rect roi(roi_x, roi_y, roi_w, roi_h);
-    cv::Mat centerImg = img(roi).clone(); // .clone() необходим перед reshape:
-                                          // submatrix не является continuous
-
+    cv::Mat centerImg = img(roi).clone();
     cv::Mat centerFloat;
-    centerImg.reshape(1, centerImg.rows * centerImg.cols)
-        .convertTo(centerFloat, CV_32F);
+    centerImg.reshape(1, centerImg.rows * centerImg.cols).convertTo(centerFloat, CV_32F);
 
     cv::Mat labels, centers;
-    int attempts = 3;
-    cv::kmeans(centerFloat, K_COLORS, labels,
-               cv::TermCriteria(
-                   cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 10, 1.0),
-               attempts, cv::KMEANS_RANDOM_CENTERS, centers);
+    cv::kmeans(centerFloat, K_COLORS, labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 10, 1.0), 3, cv::KMEANS_RANDOM_CENTERS, centers);
 
     thresh_lower_hsv_.clear();
     thresh_upper_hsv_.clear();
     for (int i = 0; i < centers.rows; ++i) {
-      cv::Mat bgr(1, 1, CV_8UC3,
-                  cv::Scalar(centers.at<float>(i, 0), centers.at<float>(i, 1),
-                             centers.at<float>(i, 2)));
+      cv::Mat bgr(1, 1, CV_8UC3, cv::Scalar(centers.at<float>(i, 0), centers.at<float>(i, 1), centers.at<float>(i, 2)));
       cv::Mat hsv;
       cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
       cv::Vec3b hsv_val = hsv.at<cv::Vec3b>(0, 0);
-
-      cv::Scalar lower(std::max(0, hsv_val[0] - offset_lower_[0]),
-                       std::max(0, hsv_val[1] - offset_lower_[1]),
-                       std::max(0, hsv_val[2] - offset_lower_[2]));
-      cv::Scalar upper(std::min(180, hsv_val[0] + offset_upper_[0]),
-                       std::min(255, hsv_val[1] + offset_upper_[1]),
-                       std::min(255, hsv_val[2] + offset_upper_[2]));
-      thresh_lower_hsv_.push_back(lower);
-      thresh_upper_hsv_.push_back(upper);
+      thresh_lower_hsv_.push_back(cv::Scalar(std::max(0, hsv_val[0] - offset_lower_[0]), std::max(0, hsv_val[1] - offset_lower_[1]), std::max(0, hsv_val[2] - offset_lower_[2])));
+      thresh_upper_hsv_.push_back(cv::Scalar(std::min(180, hsv_val[0] + offset_upper_[0]), std::min(255, hsv_val[1] + offset_upper_[1]), std::min(255, hsv_val[2] + offset_upper_[2])));
     }
-    if (mark_initialized)
-      initialized_ = true;
+    if (mark_initialized) initialized_ = true;
   }
 
   cv::Mat create_mask(const cv::Mat &img) {
     cv::Mat hsv;
     cv::cvtColor(img, hsv, cv::COLOR_BGR2HSV);
-
     cv::Mat combined = cv::Mat::zeros(img.size(), CV_8UC1);
     for (size_t i = 0; i < thresh_lower_hsv_.size(); ++i) {
       cv::Mat m;
       cv::inRange(hsv, thresh_lower_hsv_[i], thresh_upper_hsv_[i], m);
       combined |= m;
     }
-
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
     cv::morphologyEx(combined, combined, cv::MORPH_CLOSE, kernel);
-
     combined &= fov_.mask;
-
     std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(combined.clone(), contours, cv::RETR_EXTERNAL,
-                     cv::CHAIN_APPROX_NONE);
-
-    if (contours.empty())
-      return combined;
-
-    auto largest = std::max_element(
-        contours.begin(), contours.end(), [](const auto &a, const auto &b) {
-          return cv::contourArea(a) < cv::contourArea(b);
-        });
-
+    cv::findContours(combined.clone(), contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
+    if (contours.empty()) return combined;
+    auto largest = std::max_element(contours.begin(), contours.end(), [](const auto &a, const auto &b) { return cv::contourArea(a) < cv::contourArea(b); });
     cv::Mat out = cv::Mat::zeros(combined.size(), CV_8UC1);
-    cv::drawContours(out, contours, std::distance(contours.begin(), largest),
-                     cv::Scalar(255), cv::FILLED);
+    cv::drawContours(out, contours, std::distance(contours.begin(), largest), cv::Scalar(255), cv::FILLED);
     combined &= out;
-
     kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(11, 11));
     cv::morphologyEx(combined, combined, cv::MORPH_CLOSE, kernel);
-
-    cv::findContours(combined.clone(), contours, cv::RETR_EXTERNAL,
-                     cv::CHAIN_APPROX_NONE);
-    if (!contours.empty()) {
-      largest = std::max_element(
-          contours.begin(), contours.end(), [](const auto &a, const auto &b) {
-            return cv::contourArea(a) < cv::contourArea(b);
-          });
-      cv::fillPoly(combined, std::vector<std::vector<cv::Point>>{*largest},
-                   cv::Scalar(255));
-    }
-
     return combined;
   }
 
@@ -361,15 +283,10 @@ public:
     int N = 5;
     float height = (float)fov_.height;
     int dN = (int)(height / N);
-
     std::vector<int> x(N + 1, COLS / 2);
     std::vector<int> y(N + 1, ROWS);
-
     float sum_inv = 0;
-    for (int i = 1; i <= N; ++i)
-      sum_inv += 1.0f / i;
-
-    // yn FIX: стартовая точка Y (снизу вверх)
+    for (int i = 1; i <= N; ++i) sum_inv += 1.0f / i;
     int yn = std::min(ROWS, (int)(ROWS - fov_.y0));
     float k_sum = sum_inv;
     int dyn = (int)(k_sum * dN);
@@ -377,7 +294,6 @@ public:
     for (int n = 0; n < N; ++n) {
       int r_start = std::max(0, yn - dyn);
       int r_end = std::max(0, (n == 0) ? yn - (int)(dyn / 2.0) : yn);
-
       if (r_start < r_end && r_end <= ROWS) {
         cv::Mat strip = mask_comb(cv::Range(r_start, r_end), cv::Range::all());
         cv::Moments M = cv::moments(strip);
@@ -385,22 +301,15 @@ public:
           x[n + 1] = (int)(M.m10 / M.m00);
           y[n + 1] = (int)(M.m01 / M.m00) + r_start;
         } else {
-          x[n + 1] = x[n];
-          y[n + 1] = y[n];
+          x[n + 1] = x[n]; y[n + 1] = y[n];
         }
       } else {
-        x[n + 1] = x[n];
-        y[n + 1] = y[n];
+        x[n + 1] = x[n]; y[n + 1] = y[n];
       }
-      yn -= dyn;
-      k_sum -= 1.0f / (n + 1.0f);
-      dyn = (int)(k_sum * dN);
+      yn -= dyn; k_sum -= 1.0f / (n + 1.0f); dyn = (int)(k_sum * dN);
     }
 
-    for (int n = 0; n < N; ++n) {
-      cv::line(img, cv::Point(x[n], y[n]), cv::Point(x[n + 1], y[n + 1]),
-               cv::Scalar(0, 255, 0), 5);
-    }
+    for (int n = 0; n < N; ++n) cv::line(img, cv::Point(x[n], y[n]), cv::Point(x[n+1], y[n+1]), cv::Scalar(0, 255, 0), 5);
 
     cv::Rect r = fov_.control_zone;
     if (r.width > 0 && r.height > 0) {
@@ -409,19 +318,16 @@ public:
       cv::rectangle(img, r, cv::Scalar(255, 0, 0), 5);
     }
 
-    // Публикуем passability для мониторинга (в обоих режимах)
     std_msgs::Float32 pass_msg;
     pass_msg.data = controller_.passability;
     passability_pub_.publish(pass_msg);
 
     if (standalone_mode_) {
-      // Standalone: нода сама управляет роботом через cmd_vel
       geometry_msgs::Twist twist;
       controller_.calcActuatingSig(x, y, twist);
       cmd_pub_.publish(twist);
     } else {
-      // DWA MODE: Применяем Perspective Transform (IPM) для создания точной локальной карты
-      // 1. Опорные точки трапеции в оригинальном изображении
+      // DWA MODE: IPM Projection
       float y_base = ROWS - 1 - fov_.y0;
       float x_left_bot = (COLS - fov_.lower_width) / 2.0 + fov_.x0;
       float x_right_bot = x_left_bot + fov_.lower_width;
@@ -429,239 +335,116 @@ public:
       float x_right_top = x_left_top + fov_.upper_width;
       float y_top = y_base - fov_.height;
 
-      std::vector<cv::Point2f> src_pts = {
-        cv::Point2f(x_left_top, y_top),
-        cv::Point2f(x_right_top, y_top),
-        cv::Point2f(x_right_bot, y_base),
-        cv::Point2f(x_left_bot, y_base)
-      };
-
-      // 2. Целевые точки в Bird's Eye View (прямоугольник)
-      // Мы хотим охватить зону, например, 5 метров вперед и 4 метра в ширину
-      float grid_res = 0.05; // 5 см на пиксель
-      float world_h = 5.0;   // 5 метров вперед
-      float world_w = 4.0;   // 4 метра в ширину (по 2м в каждую сторону)
-      
+      std::vector<cv::Point2f> src_pts = {cv::Point2f(x_left_top, y_top), cv::Point2f(x_right_top, y_top), cv::Point2f(x_right_bot, y_base), cv::Point2f(x_left_bot, y_base)};
+      float grid_res = 0.05;
+      float world_h = 5.0;
+      float world_w = 4.0;
       int bev_w = (int)(world_w / grid_res);
       int bev_h = (int)(world_h / grid_res);
-
-      std::vector<cv::Point2f> dst_pts = {
-        cv::Point2f(0, 0),
-        cv::Point2f(bev_w, 0),
-        cv::Point2f(bev_w, bev_h),
-        cv::Point2f(0, bev_h)
-      };
+      std::vector<cv::Point2f> dst_pts = {cv::Point2f(0, 0), cv::Point2f(bev_w, 0), cv::Point2f(bev_w, bev_h), cv::Point2f(0, bev_h)};
 
       cv::Mat M = cv::getPerspectiveTransform(src_pts, dst_pts);
       cv::Mat bev_mask;
       cv::warpPerspective(mask_comb, bev_mask, M, cv::Size(bev_w, bev_h));
 
-      // Визуализация BEV (для отладки)
-      cv::imshow("BEV Output", bev_mask);
-
-      // 3. Формируем OccupancyGrid на основе "вида сверху"
       nav_msgs::OccupancyGrid grid;
       grid.header.stamp = ros::Time::now();
-      grid.header.frame_id = "base_link"; 
-      
+      grid.header.frame_id = "base_link";
       grid.info.resolution = grid_res;
-      grid.info.width = bev_w;
-      grid.info.height = bev_h;
-      grid.info.origin.position.x = 0.0; // Сетка начинается прямо перед роботом
+      grid.info.width = bev_h;  // X-направление (вперед)
+      grid.info.height = bev_w; // Y-направление (вбок)
+      grid.info.origin.position.x = 0.0;
       grid.info.origin.position.y = -world_w / 2.0;
-      grid.info.origin.position.z = 0.0;
       grid.info.origin.orientation.w = 1.0;
-
       grid.data.resize(bev_w * bev_h);
-      
-      for (int i = 0; i < bev_h; ++i) {
-        for (int j = 0; j < bev_w; ++j) {
-          // i (строки в OpenCV) идут сверху вниз (от дали к роботу)
-          // В OccupancyGrid 'my' (индекс строки) идет от робота вдаль.
-          // Код для исправления зеркальности: mx = bev_w - 1 - j
-          int mx = (bev_w - 1 - j); 
-          int my = (bev_h - 1 - i); 
-          int grid_idx = my * grid.info.width + mx;
-          if (bev_mask.at<uchar>(i, j) > 127) {
-            grid.data[grid_idx] = 0;   // Дорога - свободно
-          } else {
-            grid.data[grid_idx] = 100; // Трава - препятствие
-          }
-        }
-      }
-      road_grid_pub_.publish(grid);
 
-      // 4. Формируем PointCloud2 для Costmap (превращаем траву в препятствия)
       sensor_msgs::PointCloud2 cloud;
       cloud.header.stamp = grid.header.stamp;
       cloud.header.frame_id = grid.header.frame_id;
-      
       sensor_msgs::PointCloud2Modifier modifier(cloud);
       modifier.setPointCloud2FieldsByString(1, "xyz");
-      modifier.resize(bev_w * bev_h); // Максимальный размер, потом обрежем
-
+      modifier.resize(bev_w * bev_h);
       sensor_msgs::PointCloud2Iterator<float> iter_x(cloud, "x");
       sensor_msgs::PointCloud2Iterator<float> iter_y(cloud, "y");
       sensor_msgs::PointCloud2Iterator<float> iter_z(cloud, "z");
 
-      int point_count = 0;
-      int skip = 2; // Берем каждую вторую ячейку для оптимизации
-      for (int i = 0; i < bev_h; i += skip) {
-        for (int j = 0; j < bev_w; j += skip) {
-          if (bev_mask.at<uchar>(i, j) <= 127) { // Это трава
-            // Координаты в base_link
-            *iter_x = (bev_h - 1 - i) * grid_res;
-            *iter_y = -world_w / 2.0 + (bev_w - 1 - j) * grid_res;
-            *iter_z = 0.0;
-            ++iter_x; ++iter_y; ++iter_z;
-            point_count++;
+      sensor_msgs::LaserScan scan;
+      scan.header.stamp = grid.header.stamp;
+      scan.header.frame_id = grid.header.frame_id;
+      scan.angle_min = -1.57; scan.angle_max = 1.57; scan.angle_increment = 0.01;
+      scan.range_min = 0.1; scan.range_max = 4.0;
+      int scan_n = (int)((scan.angle_max - scan.angle_min) / scan.angle_increment);
+      scan.ranges.resize(scan_n, scan.range_max);
+
+      int p_count = 0;
+      for (int i = 0; i < bev_h; ++i) {
+        for (int j = 0; j < bev_w; ++j) {
+          float wx = (bev_h - 1 - i) * grid_res;
+          float wy = -world_w / 2.0 + (bev_w - 1 - j) * grid_res;
+
+          // Индексы для OccupancyGrid [y * width + x]
+          // где x - вперед (bev_h), y - вбок (bev_w)
+          int grid_x = (bev_h - 1 - i); 
+          int grid_y = (bev_w - 1 - j);
+          int idx = grid_y * grid.info.width + grid_x;
+
+          if (wx < blind_zone_) {
+            grid.data[idx] = 0;
+            continue;
+          }
+
+          if (bev_mask.at<uchar>(i, j) > 127) {
+            grid.data[idx] = 0;
+          } else {
+            grid.data[idx] = 100;
+            if (i % 2 == 0 && j % 2 == 0) {
+              *iter_x = wx; *iter_y = wy; *iter_z = 0.0;
+              ++iter_x; ++iter_y; ++iter_z;
+              p_count++;
+            }
+            float r = std::sqrt(wx * wx + wy * wy);
+            float a = std::atan2(wy, wx);
+            int s_idx = (int)((a - scan.angle_min) / scan.angle_increment);
+            if (s_idx >= 0 && s_idx < scan_n && r < scan.ranges[s_idx]) scan.ranges[s_idx] = r;
           }
         }
       }
-      modifier.resize(point_count);
+      modifier.resize(p_count);
+      road_grid_pub_.publish(grid);
+      costmap_pub_.publish(grid);
       grass_pc_pub_.publish(cloud);
-
-      ROS_INFO_THROTTLE(2.0,
-                        "[PathDetector] Publishing road grid. Passability=%.2f",
-                        controller_.passability);
+      scan_pub_.publish(scan);
     }
   }
 
   void imageCb(const sensor_msgs::ImageConstPtr &msg) {
     last_image_time = ros::Time::now();
-    ROS_INFO_ONCE("[PathDetector] First image received!");
     cv_bridge::CvImagePtr cv_ptr;
-    try {
-      cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-    } catch (cv_bridge::Exception &e) {
-      ROS_ERROR("cv_bridge exception: %s", e.what());
-      return;
-    }
+    try { cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8); }
+    catch (cv_bridge::Exception &e) { return; }
 
     cv::Mat img = cv_ptr->image.clone();
-    if (img.empty())
-      return;
+    if (img.empty()) return;
     cv::GaussianBlur(img, img, cv::Size(3, 3), 0);
 
-    if (!initialized_) {
-      if (interactive_mask_) {
-        cv::Mat preview = img.clone();
-        initialize(img, false); // Не ставим флаг, пока не нажат Enter
-        cv::drawContours(preview, fov_.contours, -1, cv::Scalar(0, 0, 255), 3);
-        // cv::imshow(TUNING_WINDOW, preview);
+    if (!initialized_) initialize(img, true);
 
-        int key = cv::waitKey(30);
-        if (key == 13 || key == 10) {
-          interactive_mask_ = false;
-          cv::destroyWindow(TUNING_WINDOW);
-          initialized_ = true;
-          ROS_INFO("[PathDetector] Initialization complete via UI.");
-        }
-      } else {
-        initialize(img, true);
-        ROS_INFO("[PathDetector] Initialization complete (Auto).");
-      }
+    if (initialized_) {
+      cv::Mat mask = create_mask(img);
+      find_path_center(img, mask);
+      sensor_msgs::ImagePtr mask_msg = cv_bridge::CvImage(std_msgs::Header(), "mono8", mask).toImageMsg();
+      mask_image_pub_.publish(mask_msg);
     }
-
-    if (initialized_ || interactive_mask_) {
-      try {
-        cv::Mat mask = create_mask(img);
-        int non_zero = cv::countNonZero(mask);
-        ROS_INFO_THROTTLE(2.0, "[PathDetector] Mask has %d active pixels",
-                          non_zero);
-
-        find_path_center(img, mask);
-
-        // cv::drawContours(img, fov_.contours, -1, cv::Scalar(0, 0, 255), 3);
-        cv::imshow(MASK_WINDOW, mask);
-        // cv::imshow(OPENCV_WINDOW, img);
-        cv::waitKey(1);
-
-        publishOutputs(mask);
-      } catch (const cv::Exception &e) {
-        ROS_ERROR("[PathDetector] OpenCV Exception: %s", e.what());
-      } catch (const std::exception &e) {
-        ROS_ERROR("[PathDetector] Exception: %s", e.what());
-      }
-    }
-  }
-
-  void publishOutputs(const cv::Mat &mask) {
-    sensor_msgs::LaserScan scan;
-    scan.header.stamp = ros::Time::now();
-    scan.header.frame_id = frame_id_param;
-    scan.angle_min = -1.57;
-    scan.angle_max = 1.57;
-    scan.angle_increment = 0.01;
-    scan.range_min = 0.1;
-    scan.range_max = 4.0;
-    int n = (int)((scan.angle_max - scan.angle_min) / scan.angle_increment);
-    scan.ranges.resize(n, scan.range_max);
-
-    int horizon = mask.rows / 3;
-    for (int y = horizon; y < mask.rows; ++y) {
-      for (int x = 0; x < mask.cols; ++x) {
-        if (mask.at<uint8_t>(y, x) < 128) {
-          float ny = (float)(y - horizon) / (mask.rows - horizon);
-          float nx = (float)x / mask.cols;
-          float wx = 0.5f + (1.0f - ny) * 2.5f;
-          float wy = -(nx - 0.5f) * 3.0f;
-          float r = std::sqrt(wx * wx + wy * wy);
-          float a = std::atan2(wy, wx);
-          int idx = (int)((a - scan.angle_min) / scan.angle_increment);
-          if (idx >= 0 && idx < n && r < scan.ranges[idx])
-            scan.ranges[idx] = r;
-        }
-      }
-    }
-    scan_pub_.publish(scan);
-
-    nav_msgs::OccupancyGrid og;
-    og.header.frame_id = frame_id_param;
-    og.header.stamp = ros::Time::now();
-    og.info.resolution = 0.05;
-    og.info.width = 80;
-    og.info.height = 80;
-    og.info.origin.position.x = 0.0;
-    og.info.origin.position.y = -2.0;
-    og.info.origin.orientation.w = 1.0;
-    og.data.resize(og.info.width * og.info.height, -1);
-
-    for (int y = horizon; y < mask.rows; ++y) {
-      for (int x = 0; x < mask.cols; ++x) {
-        float ny = (float)(y - horizon) / (mask.rows - horizon);
-        float nx = (float)x / mask.cols;
-        float wx = 0.5f + (1.0f - ny) * 2.5f;
-        float wy = -(nx - 0.5f) * 3.0f;
-        int mx = (int)(wx / og.info.resolution);
-        int my = (int)((wy + 2.0f) / og.info.resolution);
-        if (mx >= 0 && mx < (int)og.info.width && my >= 0 &&
-            my < (int)og.info.height) {
-          int i = my * og.info.width + mx;
-          og.data[i] = (mask.at<uint8_t>(y, x) > 128) ? 0 : 100;
-        }
-      }
-    }
-    costmap_pub_.publish(og);
-    ROS_INFO_THROTTLE(5.0, "[PathDetector] Publishing costmap and scan...");
   }
 };
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "path_detection");
-  ROS_WARN("[PathDetector] NODE STARTING...");
   ImageConverter ic;
-
-  ros::Rate r(10); // 10Hz
+  ros::Rate r(10);
   while (ros::ok()) {
     ros::spinOnce();
-    if ((ros::Time::now() - ic.last_image_time).toSec() > 5.0) {
-      ROS_WARN_THROTTLE(5.0, "[PathDetector] No images received for 5 seconds. "
-                             "Check /camera/image_raw topic!");
-    }
-    ROS_INFO_THROTTLE(
-        30.0,
-        "[PathDetector] Heartbeat: Node is alive and waiting for images...");
+    if ((ros::Time::now() - ic.last_image_time).toSec() > 5.0) ROS_WARN_THROTTLE(5.0, "[PathDetector] No images received!");
     r.sleep();
   }
   return 0;

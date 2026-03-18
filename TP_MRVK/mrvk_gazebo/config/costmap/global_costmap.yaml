@@ -15,8 +15,7 @@ global_costmap:
   # --- Плагины ---
   plugins:
     - {name: static_layer,    type: "costmap_2d::StaticLayer"}
-    - {name: obstacle_layer,  type: "costmap_2d::VoxelLayer"}
-    # - {name: path_layer,      type: "costmap_2d::VoxelLayer"}
+    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
     - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
 
   # --- Настройки плагинов ---
@@ -25,37 +24,18 @@ global_costmap:
     # Этот слой будет "подхватывать" карту от SLAM, но не будет управлять размером costmap
     map_topic: /map 
     
+  # obstacle_layer теперь в costmap_common.yaml, 
+  # но для глобальной карты мы УБИРАЕМ траву, оставляем только лазер
   obstacle_layer:
-    enabled: true
-    # ВАЖНО: global_costmap слушает "ЧИСТЫЙ" скан, чтобы не рисовать динамику
-    observation_sources: laser_scan_sensor grass_cloud
-    laser_scan_sensor: {
-      data_type: LaserScan, 
-      topic: /scan_cleaned, 
-      min_obstacle_height: 0.15,
-      max_obstacle_height: 2.0,
-      sensor_frame: sensor_laser_link,
-      marking: true, 
-      clearing: true,
-      inf_is_valid: true
-    }
-    grass_cloud: {
-      sensor_frame: base_link, 
-      data_type: PointCloud2, 
-      topic: /path_detector/grass_cloud, 
-      marking: true, 
-      clearing: false, 
-      min_obstacle_height: -0.1, 
-      max_obstacle_height: 0.5
-    }
-    observation_persistence: 1.0 //?
-    obstacle_range: 3.5
-    raytrace_range: 4.2
+    observation_sources: laser_scan_sensor
     
   inflation_layer:
     enabled: true
     inflation_radius: 1.2
     cost_scaling_factor: 6.5
+
+  # road_layer настройки будут подхвачены из costmap_common.yaml
+  # но мы можем добавить специфичные лимиты здесь если нужно
 
   # # --- Настройки для СЛОЯ ДОРОГИ (path_detector) ---
   # path_layer:
