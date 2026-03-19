@@ -30,7 +30,7 @@ local_costmap:
   # --- Настройки инфляции для ДОРОГИ ---
   road_inflation:
     enabled: true
-    inflation_radius: 0.3    # Маленький отступ от края дороги
+    inflation_radius: 0.4    # Маленький отступ от края дороги
     cost_scaling_factor: 10.0
 
   # Настройки слоев подхватываются из costmap_common.yaml по именам

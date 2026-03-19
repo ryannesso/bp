@@ -174,7 +174,7 @@ class ImageConverter {
   int mask_lb_x, mask_rb_x, mask_lt_x, mask_rt_x, mask_t_y, mask_b_y;
   bool interactive_mask_;
   bool standalone_mode_;
-  double blind_zone_;
+
 
 public:
   ros::Time last_image_time;
@@ -203,7 +203,7 @@ public:
     pnh.param("interactive_mask", interactive_mask_, true);
     pnh.param<std::string>("frame_id", frame_id_param, "odom");
     pnh.param("standalone_mode", standalone_mode_, false);
-    pnh.param("blind_zone", blind_zone_, 0.7);
+
 
     image_sub_ = it_.subscribe("/camera/image_raw", 1, &ImageConverter::imageCb, this);
     ROS_INFO("[PathDetector] Unified node started. Frame ID: %s", frame_id_param.c_str());
@@ -262,19 +262,28 @@ public:
       cv::inRange(hsv, thresh_lower_hsv_[i], thresh_upper_hsv_[i], m);
       combined |= m;
     }
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+    // Бинарное закрытие для объединения разрозненных фрагментов (более агрессивное)
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(11, 11));
     cv::morphologyEx(combined, combined, cv::MORPH_CLOSE, kernel);
     combined &= fov_.mask;
+
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(combined.clone(), contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
     if (contours.empty()) return combined;
-    auto largest = std::max_element(contours.begin(), contours.end(), [](const auto &a, const auto &b) { return cv::contourArea(a) < cv::contourArea(b); });
+
+    // Заполняем ВСЕ контуры, которые имеют достаточную площадь (чтобы обработать разрывы в дороге)
     cv::Mat out = cv::Mat::zeros(combined.size(), CV_8UC1);
-    cv::drawContours(out, contours, std::distance(contours.begin(), largest), cv::Scalar(255), cv::FILLED);
-    combined &= out;
-    kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(11, 11));
-    cv::morphologyEx(combined, combined, cv::MORPH_CLOSE, kernel);
-    return combined;
+    for (size_t i = 0; i < contours.size(); i++) {
+      if (cv::contourArea(contours[i]) > 500) {
+        cv::drawContours(out, contours, (int)i, cv::Scalar(255), cv::FILLED);
+      }
+    }
+
+    // Финальное сглаживание краев
+    kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+    cv::morphologyEx(out, out, cv::MORPH_CLOSE, kernel);
+
+    return out;
   }
 
   void find_path_center(cv::Mat &img, const cv::Mat &mask_comb) {
@@ -345,7 +354,11 @@ public:
 
       cv::Mat M = cv::getPerspectiveTransform(src_pts, dst_pts);
       cv::Mat bev_mask;
-      cv::warpPerspective(mask_comb, bev_mask, M, cv::Size(bev_w, bev_h));
+      cv::warpPerspective(mask_comb, bev_mask, M, cv::Size(bev_w, bev_h), cv::INTER_NEAREST);
+      
+      // Дополнительная очистка шума прямо на BEV-маске
+      cv::Mat k_bev = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+      cv::morphologyEx(bev_mask, bev_mask, cv::MORPH_CLOSE, k_bev);
 
       nav_msgs::OccupancyGrid grid;
       grid.header.stamp = ros::Time::now();
@@ -388,10 +401,7 @@ public:
           int grid_y = (bev_w - 1 - j);
           int idx = grid_y * grid.info.width + grid_x;
 
-          if (wx < blind_zone_) {
-            grid.data[idx] = 0;
-            continue;
-          }
+
 
           if (bev_mask.at<uchar>(i, j) > 127) {
             grid.data[idx] = 0;

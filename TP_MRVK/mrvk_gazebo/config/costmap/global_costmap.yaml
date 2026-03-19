@@ -17,6 +17,9 @@ global_costmap:
     - {name: static_layer,    type: "costmap_2d::StaticLayer"}
     - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
     - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+    - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (облако точек)
+    - {name: road_layer,      type: "costmap_2d::StaticLayer"}    # Дорога (сетка)
+    - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие дороги/травы (слабое)
 
   # --- Настройки плагинов ---
   static_layer:
@@ -33,6 +36,13 @@ global_costmap:
     enabled: true
     inflation_radius: 1.2
     cost_scaling_factor: 6.5
+
+
+  road_inflation:
+    enabled: true
+    inflation_radius: 0.4    # Маленький отступ от края дороги
+    cost_scaling_factor: 10.0
+
 
   # road_layer настройки будут подхвачены из costmap_common.yaml
   # но мы можем добавить специфичные лимиты здесь если нужно
