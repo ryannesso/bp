@@ -6,9 +6,9 @@ local_costmap:
   publish_frequency: 5.0
   static_map: false
   rolling_window: true
-  width: 8.0
-  height: 8.0
-  resolution: 0.1
+  width: 10.0
+  height: 10.0
+  resolution: 0.05
   transform_tolerance: 0.8
 
   # --- Список Плагинов ---
@@ -18,9 +18,21 @@ local_costmap:
     - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}  # Лазер
     - {name: laser_inflation, type: "costmap_2d::InflationLayer"} # Раздутие лазера (сильное)
     - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (облако точек)
-    - {name: road_layer,      type: "costmap_2d::StaticLayer"}    # Дорога (сетка)
+    - {name: road_layer,      type: "costmap_2d::DetectedPathLayer"}    # Дорога (custom plugin)
     - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие дороги/травы (слабое)
-
+  obstacle_layer:
+    observation_sources: laser_scan_sensor
+    laser_scan_sensor: {
+      data_type: LaserScan,
+      topic: /scan_filtered, 
+      sensor_frame: sensor_laser_link,
+      marking: true,
+      clearing: false,
+      observation_persistence: 0.1, 
+      footprint_clearing_enabled: true 
+    }
+  obstacle_range: 3.5
+  raytrace_range: 4.2
   # --- Настройки инфляции для ЛАЗЕРА ---
   laser_inflation:
     enabled: true
@@ -30,7 +42,7 @@ local_costmap:
   # --- Настройки инфляции для ДОРОГИ ---
   road_inflation:
     enabled: true
-    inflation_radius: 0.4    # Маленький отступ от края дороги
-    cost_scaling_factor: 10.0
+    inflation_radius: 0.25    # Маленький отступ от края дороги
+    cost_scaling_factor: 5.5
 
   # Настройки слоев подхватываются из costmap_common.yaml по именам

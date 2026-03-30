@@ -5,7 +5,7 @@ import numpy
 import cv2
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
-from path_detection.msg import DetectedPath
+from path_detector.msg import DetectedPath
 
 class PathDetector:
     def __init__(self, pub):

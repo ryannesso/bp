@@ -22,26 +22,22 @@ obstacle_layer:
 
 # --- Слой Травы (Camera) ---
 grass_layer:
-  observation_sources: grass_cloud
-  grass_cloud: {
+  observation_sources: camera_scan
+  camera_scan: {
     sensor_frame: base_link, 
-    data_type: PointCloud2, 
-    topic: /path_detector/grass_cloud, 
+    data_type: LaserScan, 
+    topic: /path_detector/scan, 
     marking: true, 
-    clearing: true, 
-    observation_persistence: 1.0,
+    clearing: false, 
+    observation_persistence: 1.0,   # "Время жизни" препятствия - 1 секунда.
     min_obstacle_height: -2.0, 
     max_obstacle_height: 2.0
   }
-  obstacle_range: 3.5
-  raytrace_range: 4.2
+  obstacle_range: 9.5
+  raytrace_range: 10.0
 
 road_layer:
   enabled: true
-  map_topic: /path_detector/costmap
-  subscribe_to_updates: true
-  track_unknown_space: true
-  transform_tolerance: 1.0
 
 # --- Настройки инфляции ---
 inflation_layer:

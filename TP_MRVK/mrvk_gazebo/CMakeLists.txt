@@ -2,15 +2,31 @@ cmake_minimum_required(VERSION 2.8.3)
 project(mrvk_gazebo)
 
 ## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
-find_package(catkin REQUIRED)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  sensor_msgs
+  cv_bridge
+  tf2_ros
+  tf2_geometry_msgs
+  image_geometry
+)
 
-## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+find_package(OpenCV REQUIRED)
+
+catkin_package(
+  CATKIN_DEPENDS roscpp sensor_msgs cv_bridge tf2_ros tf2_geometry_msgs image_geometry
+)
+
+include_directories(
+  ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+add_executable(lidar_camera_fusion scripts/lidar_camera_fusion.cpp)
+add_dependencies(lidar_camera_fusion ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(lidar_camera_fusion ${catkin_LIBRARIES} ${OpenCV_LIBS})
 
 
-## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
 # catkin_python_setup()

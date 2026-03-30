@@ -1,49 +1,49 @@
-slam_toolbox:
-  # === ФРЕЙМЫ ===
-  odom_frame: odom
-  map_frame: map
-  base_frame: base_link           # ← ТВОЙ ФРЕЙМ
+# === ФРЕЙМЫ ===
+odom_frame: odom
+map_frame: map
+base_frame: base_link
 
-  # === РЕЖИМ ===
-  mode: mapping                   # или localization
+# === РЕЖИМ ===
+mode: mapping
 
-  # === ОДОМЕТРИЯ ===
-  use_odometry: true
-  odom_topic: odom
-  # ВАЖНО: Доверяем одометрии больше, когда мало статических ориентиров
-  allow_degrade_localization: false  # Не деградирует локализацию
+# === ОДОМЕТРИЯ ===
+use_odometry: true
+odom_topic: odom
+allow_degrade_localization: false
 
-  # === ФИЛЬТРАЦИЯ ДИНАМИКИ ===
-  use_scan_matching: true
-  do_loop_closing: true
-  loop_closure_search_radius: 10.0
+# === ФИЛЬТРАЦИЯ ДИНАМИКИ ===
+use_scan_matching: false          # ВЫКЛЮЧЕНО: Полный запрет на прыжки. 
+do_loop_closing: true            # ВЫКЛЮЧЕНО: Полный запрет на перестроение графа.
+loop_closure_search_radius: 0.1
 
-  # === ПАРАМЕТРЫ СКАНИРОВАНИЯ ===
-  minimum_travel_distance: 0.3      # МЕНЬШЕ: чаще обновляем для стабильности
-  minimum_travel_heading: 0.3       # МЕНЬШЕ: чувствительнее к поворотам
-  scan_buffer_size: 100              # БОЛЬШЕ буффер для обработки динамики
-  scan_buffer_maximum_scan_distance: 4.0
-  minimum_score: 0.7               # СНИЖЕН ПОРОГ: более гибко к "плохим" сканам
-  max_resampling_interval: 0.3      # ЧАЩЕ переэмэмплируем
+# === ПАРАМЕТРЫ СКАНИРОВАНИЯ ===
+minimum_travel_distance: 0.15
+minimum_travel_heading: 0.15
+scan_buffer_size: 150
+scan_buffer_maximum_scan_distance: 6.0
+minimum_score: 0.2
+max_resampling_interval: 0.5
 
-  # === ФИЛЬТРЫ ДВИЖЕНИЯ (Доверие одометрии) ===
-  motion_filter_linear: 0.2         # СНИЖЕН: доверяем одометрии больше
-  motion_filter_angular: 0.2        # СНИЖЕН: доверяем гироскопу больше
+# === ФИЛЬТРЫ ДВИЖЕНИЯ (Доверие одометрии) ===
+distance_variance_penalty: 20.0
+angle_variance_penalty: 20.0
 
-  # === ОПТИМИЗАЦИЯ ===
-  correlation_search_space_size: 0.25
-  correlation_search_space_resolution: 0.01
-  loop_search_space_size: 8.0
-  loop_search_space_resolution: 0.05
+# === ОПТИМИЗАЦИЯ ===
+correlation_search_space_dimension: 0.05
+correlation_search_space_resolution: 0.01
+correlation_search_space_full_resolution: 0.01
+loop_search_space_size: 8.0
+loop_search_space_resolution: 0.05
 
-  # === ТАЙМИНГИ ===
-  map_update_interval: 0.5          # ЧАЩЕ обновляем карту
-  resolution: 0.05
-  map_start_size: [100, 100]
-  
-  # ОЧИСТКА:
-  free_space_threshold: 0.15       # ← ЕЩЕ НИЖЕ (быстрее очищает динамику)
-  occupied_threshold: 0.55           # ← НИЖЕ ПОРОГ (не "защёлкивает")
-  probability_of_occupancy: 0.5      # ← БОЛЕЕ КОНСЕРВАТИВНО
-  max_laser_range: 4.0
-  max_occupancy_grid_size: 100
+# === ТАЙМИНГИ ===
+map_update_interval: 0.5
+transform_publish_period: 0.05     # ВЛАДЕЕТ трансформацией map->odom
+resolution: 0.05
+map_start_size: [100, 100]
+
+# ОЧИСТКА:
+free_space_threshold: 0.15
+occupied_threshold: 0.55
+probability_of_occupancy: 0.5
+max_laser_range: 4.0
+max_occupancy_grid_size: 100

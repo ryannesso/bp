@@ -7,9 +7,9 @@ global_costmap:
   publish_frequency: 2.0
   static_map: false
   rolling_window: true
-  width: 40.0
-  height: 40.0
-  resolution: 0.05
+  width: 500.0
+  height: 500.0
+  resolution: 0.5
   inflation_radius: 1.2
   
   # --- Плагины ---
@@ -17,9 +17,9 @@ global_costmap:
     - {name: static_layer,    type: "costmap_2d::StaticLayer"}
     - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
     - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
-    - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (облако точек)
-    - {name: road_layer,      type: "costmap_2d::StaticLayer"}    # Дорога (сетка)
-    - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие дороги/травы (слабое)
+    - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (чистящийся лазер)
+    - {name: road_layer,      type: "costmap_2d::DetectedPathLayer"}    # Дорога (custom plugin)
+    - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие травы (слабое)
 
   # --- Настройки плагинов ---
   static_layer:
@@ -37,11 +37,13 @@ global_costmap:
     inflation_radius: 1.2
     cost_scaling_factor: 6.5
 
-
   road_inflation:
     enabled: true
-    inflation_radius: 0.4    # Маленький отступ от края дороги
-    cost_scaling_factor: 10.0
+    inflation_radius: 0.25    # Совпадает с local_costmap (для правильного роутинга)
+    cost_scaling_factor: 5.5
+
+
+
 
 
   # road_layer настройки будут подхвачены из costmap_common.yaml

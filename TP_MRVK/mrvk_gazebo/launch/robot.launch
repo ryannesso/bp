@@ -1,13 +1,15 @@
 <launch>
     <!-- 0. ARGUMENTY -->
     <arg name="test_name" default="imrp_1_obst_1"/>
-    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/baylands.world"/>
+    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/example.world"/>
     
     <!-- Súradnice štartu robota -->
-    <arg name="init_x" default="-18.995439"/>
-    <arg name="init_y" default="-235.888025"/>
-    <arg name="init_z" default="-0.766392"/>
-    <arg name="init_yaw" default="-0.026155"/>
+    <!-- x: 190.456985 y: -273.546978 z: -0.415242 yaw: 3.062555 for baylands-->
+    <!-- x: 0.325792 y: -4.379866 z: 0.164960 yaw: 1.568965 for example-->
+    <arg name="init_x" default="0.325792"/>
+    <arg name="init_y" default="-4.379866"/>
+    <arg name="init_z" default="0.164960"/>
+    <arg name="init_yaw" default="1.568965"/>
 
     <!-- Cieľ robota -->
     <arg name="goal_x" default="11.421"/>
@@ -78,39 +80,52 @@
         <remap from="/scan_filtered" to="/scan_cleaned"/>
         <!-- Оптимизированные параметры для стабилизации без статики -->
         <param name="speed_threshold" value="0.08"/>      <!-- Меньше порог скорости -->
-        <param name="ttl_duration" value="0.5"/>          <!-- Короче время жизни призраков -->
-        <param name="radius_buffer" value="0.35"/>        <!-- Меньше буффер очистки -->
+        <param name="ttl_duration" value="1.5"/>          <!-- Короче время жизни призраков -->
+        <param name="radius_buffer" value="0.4"/>        <!-- Меньше буффер очистки -->
         <param name="proximity_threshold" value="0.3"/>   <!-- Порог соседства для объектов -->
+        <param name="max_tilt_angle" value="0.20"/>       <!-- ИСПРАВЛЕНО: было 0.03 (1.7°) — слишком мало! Теперь 0.20 (~11.5°) - не блокировать скан на обычных уклонах -->
     </node>
 
-    <!-- Grass PointCloud to LaserScan -->
-    <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="grass_to_laserscan" output="screen">
-        <remap from="cloud_in" to="/path_detector/grass_cloud"/>
-        <remap from="scan" to="/grass_scan"/>
-        <param name="target_frame" value="base_link"/>
-        <param name="range_min" value="0.1"/>
-        <param name="range_max" value="5.0"/>
-    </node>
 
-    <!-- Scan Merger -->
-    <node pkg="mrvk_gazebo" type="scan_merger.py" name="scan_merger_node" output="screen" />
-
-    <!-- 6. SLAM TOOLBOX (Mapovanie) -->
+    <!-- 6. ШЁЛКОВЫЙ SLAM: Баланс идеальной одометрии и полной карты в ОДНОМ узле.
+         Использует полный скан, но ограничен зоной поиска (см. slam_toolbox_params.yaml). -->
     <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
       <rosparam command="load" file="$(find mrvk_gazebo)/config/slam/slam_toolbox_params.yaml" />
       <param name="odom_frame" value="odom"/>      
       <param name="map_frame" value="map"/>
       <param name="base_frame" value="base_link"/> 
-      <remap from="scan" to="/scan_slam_ready"/>
-      <remap from="odom" to="/odometry/filtered"/>       
+      <remap from="scan" to="/scan_filtered"/> <!-- Видит ВСЁ для карты -->
+      <remap from="odom" to="/odometry/filtered"/>
     </node>
 
+
+    
+
+
+
     <!-- Road Detection (HSV based - OLD)  -->
-    <node name="path_detector" pkg="path_detector" type="path_detection" output="screen">
+
+    <!-- <node name="path_detector" pkg="path_detector" type="path_detection" output="screen">
         <param name="frame_id" value="base_link"/>
         <param name="interactive_mask" value="false"/>
         <param name="standalone_mode" value="false"/>
-    </node>
+        <param name="use_convex_hull" value="true" />
+        <param name="v_offset" value="80" />
+        <param name="use_grass_exclusion" value="true" />
+        <param name="gh_low" value="25" />
+        <param name="gs_low" value="40" />
+        <param name="gv_low" value="40" />
+        <param name="gh_high" value="65" />
+        <param name="gs_high" value="255" />
+        <param name="gv_high" value="255" />
+
+        <param name="mask_lb_x" value="0" />   
+        <param name="mask_rb_x" value="100" /> 
+        <param name="mask_lt_x" value="0" />  
+        <param name="mask_rt_x" value="100" /> 
+        <param name="mask_t_y" value="36" />   
+        <param name="mask_b_y" value="100" />  
+    </node> -->
 
     <!-- Road Detection (Neural based - NEW) -->
     <!-- <include file="$(find road_segmentation)/launch/road_segmentation.launch">
@@ -120,7 +135,13 @@
         <rosparam file="$(find mrvk_gazebo)/config/navigation/exp.yaml" command="load" />
     </node> -->
 
+    <!-- 6.5 LIDAR-CAMERA FUSION: Фильтрует из скана лидара точки попавшие в траву/горки.
+         Вход:  /scan_filtered (лидар) + /path_detector/mask (маска дороги с камеры)
+         Выход: /scan_for_slam (чистый скан только реальных препятствий) -->
+    <!-- <node pkg="mrvk_gazebo" type="lidar_camera_fusion" name="lidar_camera_fusion" output="screen"/> -->
+
     <!-- 7. NAVIGÁCIA (Move Base) -->
+
     <node pkg="move_base" type="move_base" name="move_base" output="screen">
         <rosparam file="$(find mrvk_gazebo)/config/costmap/costmap_common.yaml" command="load" ns="global_costmap" />
         <rosparam file="$(find mrvk_gazebo)/config/costmap/costmap_common.yaml" command="load" ns="local_costmap" />
@@ -130,8 +151,8 @@
         <rosparam file="$(find mrvk_gazebo)/config/navigation/improved_dwa_params.yaml" command="load" />
         <remap from="/cmd_vel" to="/shoddy/cmd_vel"/>
         <remap from="odom" to="/odometry/filtered"/>  
-        <!-- Note: Topics for obstacle_layer are defined in the YAML files -->
     </node>
+
 
 <!-- 8. SFÉRY (Spawn dvoch objektov) -->
     <param name="sphere_description" type="string" value="
@@ -144,9 +165,10 @@
         &lt;gazebo reference=&quot;base_link&quot;&gt;&lt;material&gt;Gazebo/Red&lt;/material&gt;&lt;/gazebo&gt;
       &lt;/robot&gt;" />    
 
+
     <!-- Sféra 1 (Y = 0.0) -->
     <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_1"
-          args="-urdf -model moving_sphere -param sphere_description -x 2.0 -y 0.0 -z 0.3" />
+          args="-urdf -model moving_sphere -param sphere_description -x -2.0 -y 0.0 -z 0.3" />
 
     <node pkg="mrvk_gazebo" type="move_sphere.py" name="move_sphere_controller" output="screen" />
 

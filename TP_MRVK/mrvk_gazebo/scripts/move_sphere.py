@@ -29,7 +29,7 @@ class MoveSphere:
             vx = self.amplitude * 2 * math.pi * self.frequency * math.cos(2 * math.pi * self.frequency * t)
 
             # Обновление состояния модели в Gazebo
-            model_state.pose.position.x = 2.0 + x_offset  # Центрируем вокруг X=2.0
+            model_state.pose.position.x = 0.0 + x_offset  # Центрируем вокруг X=2.0
             model_state.pose.position.y = 0.0             # Фиксированный Y
             model_state.pose.position.z = 0.5
             model_state.pose.orientation.w = 1.0
