@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
   pcl_conversions
   obstacle_detector
+  tracked_obstacle_msgs
 )
 
 # ШАГ 2: ИЩЕМ НЕ-ROS ЗАВИСИМОСТИ
@@ -27,6 +28,7 @@ catkin_package(
     pcl_ros 
     pcl_conversions 
     obstacle_detector
+    tracked_obstacle_msgs
 )
 
 # ШАГ 4: ПУТИ К ЗАГОЛОВКАМ

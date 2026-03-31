@@ -20,17 +20,7 @@ local_costmap:
     - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (облако точек)
     - {name: road_layer,      type: "costmap_2d::DetectedPathLayer"}    # Дорога (custom plugin)
     - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие дороги/травы (слабое)
-  obstacle_layer:
-    observation_sources: laser_scan_sensor
-    laser_scan_sensor: {
-      data_type: LaserScan,
-      topic: /scan_filtered, 
-      sensor_frame: sensor_laser_link,
-      marking: true,
-      clearing: false,
-      observation_persistence: 0.1, 
-      footprint_clearing_enabled: true 
-    }
+    
   obstacle_range: 3.5
   raytrace_range: 4.2
   # --- Настройки инфляции для ЛАЗЕРА ---

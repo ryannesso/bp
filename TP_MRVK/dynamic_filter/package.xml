@@ -19,6 +19,7 @@
   <build_depend>pcl_ros</build_depend>
   <build_depend>pcl_conversions</build_depend>
   <build_depend>obstacle_detector</build_depend>
+  <build_depend>tracked_obstacle_msgs</build_depend>
 
   <!-- Зависимости для запуска -->
   <exec_depend>laser_geometry</exec_depend>
@@ -29,5 +30,6 @@
   <exec_depend>pcl_ros</exec_depend>
   <exec_depend>pcl_conversions</exec_depend>
   <exec_depend>obstacle_detector</exec_depend>
+  <exec_depend>tracked_obstacle_msgs</exec_depend>
 
 </package>

@@ -12,12 +12,13 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   tf2_ros
   obstacle_detector
+  tracked_obstacle_msgs
 )
 
 catkin_package(
   INCLUDE_DIRS include 
   LIBRARIES improved_dwa_local_planner
-  CATKIN_DEPENDS roscpp pluginlib nav_core nav_msgs base_local_planner costmap_2d geometry_msgs tf2_ros obstacle_detector
+  CATKIN_DEPENDS roscpp pluginlib nav_core nav_msgs base_local_planner costmap_2d geometry_msgs tf2_ros obstacle_detector tracked_obstacle_msgs
 )
 
 include_directories(

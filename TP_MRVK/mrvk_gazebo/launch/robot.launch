@@ -1,15 +1,15 @@
 <launch>
     <!-- 0. ARGUMENTY -->
     <arg name="test_name" default="imrp_1_obst_1"/>
-    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/example.world"/>
+    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/baylands.world"/>
     
     <!-- Súradnice štartu robota -->
     <!-- x: 190.456985 y: -273.546978 z: -0.415242 yaw: 3.062555 for baylands-->
     <!-- x: 0.325792 y: -4.379866 z: 0.164960 yaw: 1.568965 for example-->
-    <arg name="init_x" default="0.325792"/>
-    <arg name="init_y" default="-4.379866"/>
-    <arg name="init_z" default="0.164960"/>
-    <arg name="init_yaw" default="1.568965"/>
+    <arg name="init_x" default="190.456985"/>
+    <arg name="init_y" default="-273.546978"/>
+    <arg name="init_z" default="-0.415242"/>
+    <arg name="init_yaw" default="3.062555"/>
 
     <!-- Cieľ robota -->
     <arg name="goal_x" default="11.421"/>
@@ -103,29 +103,8 @@
 
 
 
-    <!-- Road Detection (HSV based - OLD)  -->
-
-    <!-- <node name="path_detector" pkg="path_detector" type="path_detection" output="screen">
-        <param name="frame_id" value="base_link"/>
-        <param name="interactive_mask" value="false"/>
-        <param name="standalone_mode" value="false"/>
-        <param name="use_convex_hull" value="true" />
-        <param name="v_offset" value="80" />
-        <param name="use_grass_exclusion" value="true" />
-        <param name="gh_low" value="25" />
-        <param name="gs_low" value="40" />
-        <param name="gv_low" value="40" />
-        <param name="gh_high" value="65" />
-        <param name="gs_high" value="255" />
-        <param name="gv_high" value="255" />
-
-        <param name="mask_lb_x" value="0" />   
-        <param name="mask_rb_x" value="100" /> 
-        <param name="mask_lt_x" value="0" />  
-        <param name="mask_rt_x" value="100" /> 
-        <param name="mask_t_y" value="36" />   
-        <param name="mask_b_y" value="100" />  
-    </node> -->
+    <!-- 6.2 Road Detection (ML based) -->
+    <node name="path_detector" pkg="path_detector" type="path_detection.py" output="screen"/>
 
     <!-- Road Detection (Neural based - NEW) -->
     <!-- <include file="$(find road_segmentation)/launch/road_segmentation.launch">

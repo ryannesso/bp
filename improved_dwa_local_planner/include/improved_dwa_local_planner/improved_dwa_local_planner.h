@@ -1,25 +1,22 @@
-#ifndef IMPROVED_DWA_LOCAL_PLANNER_H_
-#define IMPROVED_DWA_LOCAL_PLANNER_H_
+#pragma once
 
 #include <angles/angles.h>
+#include <base_local_planner/costmap_model.h>
 #include <base_local_planner/goal_functions.h>
 #include <base_local_planner/odometry_helper_ros.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
-#include <mutex>
 #include <nav_core/base_local_planner.h>
-#include <nav_msgs/OccupancyGrid.h>
+#include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <ros/ros.h>
 #include <tf2_ros/buffer.h>
 #include <visualization_msgs/MarkerArray.h>
 
-// Подключаем тип сообщения для получения данных о препятствиях
-#include <obstacle_detector/Obstacles.h>
-
-#include <string>
-#include <vector>
+// Обогащённые данные об объектах из ScanCleaner
+#include <tracked_obstacle_msgs/TrackedCircle.h>
+#include <tracked_obstacle_msgs/TrackedCircleArray.h>
 
 namespace improved_dwa_local_planner {
 
@@ -28,83 +25,121 @@ public:
   ImprovedDWALocalPlanner();
   ~ImprovedDWALocalPlanner();
 
+  // --- nav_core::BaseLocalPlanner interface ---
   void initialize(std::string name, tf2_ros::Buffer *tf,
                   costmap_2d::Costmap2DROS *costmap_ros) override;
-  bool computeVelocityCommands(geometry_msgs::Twist &cmd_vel) override;
-  bool isGoalReached() override;
   bool setPlan(const std::vector<geometry_msgs::PoseStamped> &plan) override;
+  bool isGoalReached() override;
+  bool computeVelocityCommands(geometry_msgs::Twist &cmd_vel) override;
 
 private:
-  // Структура для траектории
+  // ---------------------------------------------------------------------------
+  // СТРУКТУРА ТРАЕКТОРИИ
+  // ---------------------------------------------------------------------------
   struct Trajectory {
-    double vx;
-    double vth;
-    double cost;
+    double vx = 0.0;
+    double vth = 0.0;
+    double cost = -1.0;
     std::vector<geometry_msgs::PoseStamped> poses;
-    int collision_pose_idx = -1; // Индекс позы столкновения (-1 если нет)
+    int collision_pose_idx = -1;
     geometry_msgs::Point
-        obstacle_pos; // Предсказанная позиция объекта при столкновении
+        obstacle_pos; // Предсказанная позиция объекта в момент удара
     geometry_msgs::Point
-        obstacle_start_pos; // Текущая позиция объекта в момент планирования
+        obstacle_start_pos; // Начальная позиция объекта (для стрелки)
   };
 
-  // --- ОСНОВНЫЕ МЕТОДЫ АЛГОРИТМА ---
-  void obstaclesCallback(const obstacle_detector::Obstacles::ConstPtr &msg);
+  // ---------------------------------------------------------------------------
+  // CALLBACKS
+  // ---------------------------------------------------------------------------
+
+  // Подписка на /obstacles_tracked — обогащённые данные из ScanCleaner
+  void trackedObstaclesCallback(
+      const tracked_obstacle_msgs::TrackedCircleArray::ConstPtr &msg);
+
+  // ---------------------------------------------------------------------------
+  // АЛГОРИТМ DWA
+  // ---------------------------------------------------------------------------
   Trajectory generateTrajectory(double vx, double vth);
+
+  // Оценка траектории — возвращает положительное число (лучше = больше) или -1
+  // при опасности
   double
   scoreTrajectory(Trajectory &traj,
                   const std::vector<geometry_msgs::PoseStamped> &local_plan);
 
-  // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ИЗ СТАТЬИ ---
+  // ---------------------------------------------------------------------------
+  // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ОЦЕНКИ
+  // ---------------------------------------------------------------------------
+
+  // Оценка направления движения относительно вектора скорости объекта
+  // Аргументы: скорость робота, поза робота, данные об объекте
   double calculate_dis_hv(double robot_vx,
                           const geometry_msgs::PoseStamped &robot_pose,
-                          const obstacle_detector::CircleObstacle &obs);
+                          const tracked_obstacle_msgs::TrackedCircle &obs);
+
+  // Предсказание столкновения во времени.
+  // safety_multiplier: 1.0 — норма, >1.0 — расширенная зона (для
+  // ghost/unstable)
   double calculate_dis_fp(Trajectory &traj,
-                          const obstacle_detector::CircleObstacle &obs);
-  void
-  publishMarkers(const std::vector<Trajectory> &trajectories); // Для отладки
-  void publishTrackedObstacles(); // Vizualizácia sledovaných objektov
+                          const tracked_obstacle_msgs::TrackedCircle &obs,
+                          double safety_multiplier = 1.0);
 
-  // --- ПЕРЕМЕННЫЕ-ЧЛЕНЫ КЛАССА ---
+  // ---------------------------------------------------------------------------
+  // ВИЗУАЛИЗАЦИЯ
+  // ---------------------------------------------------------------------------
+  void publishMarkers(const std::vector<Trajectory> &trajectories);
+  void publishTrackedObstaclesViz();
+
+  // ---------------------------------------------------------------------------
+  // ROS-ИНФРАСТРУКТУРА
+  // ---------------------------------------------------------------------------
   bool initialized_;
-  costmap_2d::Costmap2DROS *costmap_ros_;
   tf2_ros::Buffer *tf_;
-  std::vector<geometry_msgs::PoseStamped> global_plan_;
-  base_local_planner::OdometryHelperRos odom_helper_;
+  costmap_2d::Costmap2DROS *costmap_ros_;
 
-  // --- ПОДПИСЧИКИ И ПАБЛИШЕРЫ ---
+  ros::Subscriber tracked_obstacles_sub_;
   ros::Publisher local_plan_pub_;
   ros::Publisher candidate_trajs_pub_;
-  ros::Publisher collision_markers_pub_; // Визуализация точек коллизий
-  ros::Publisher tracked_objects_pub_;   // Vizualizácia dynamických objektov
-  ros::Subscriber obstacles_sub_; // Подписчик на динамические препятствия
-  obstacle_detector::Obstacles
-      last_obstacles_; // Хранилище для последних увиденных препятствий
+  ros::Publisher tracked_objects_pub_;
+  ros::Publisher collision_markers_pub_;
 
+  base_local_planner::OdometryHelperRos odom_helper_;
 
-  // --- ПАРАМЕТРЫ, ЗАГРУЖАЕМЫЕ ИЗ YAML ---
-  // Веса для оценочной функции
-  double alpha_;   // heading_cost (направление на локальную цель)
-  double beta_;    // dist_cost (расстояние до статических препятствий)
-  double gamma_;   // velocity_cost (предпочтение высокой скорости)
-  double kappa_;   // Вес для dis_hv
-  double epsilon_; // Вес для dis_fp
+  // ---------------------------------------------------------------------------
+  // СОСТОЯНИЕ
+  // ---------------------------------------------------------------------------
+  std::vector<geometry_msgs::PoseStamped> global_plan_;
+  tracked_obstacle_msgs::TrackedCircleArray last_tracked_obstacles_;
 
-  // Ограничения
-  double max_vel_x_, min_vel_x_, max_vel_th_;
-  double acc_lim_x_, acc_lim_th_;
+  // ---------------------------------------------------------------------------
+  // ПАРАМЕТРЫ (загружаются из ROS param server в initialize())
+  // ---------------------------------------------------------------------------
+  // Веса стоимости
+  double alpha_;   // Следование глобальному пути
+  double beta_;    // Удаление от статических препятствий
+  double gamma_;   // Поощрение целевой скорости
+  double kappa_;   // Направление относительно динамических объектов
+  double epsilon_; // Прогнозируемая безопасность (время до столкновения)
+
+  // Физика робота
+  double max_vel_x_;
+  double min_vel_x_;
+  double max_vel_th_;
+  double acc_lim_x_;
+  double acc_lim_th_;
 
   // Параметры симуляции
-  double predict_time_, dt_;
-  int vx_samples_, vth_samples_;
+  double predict_time_;
+  double dt_;
+  int vx_samples_;
+  int vth_samples_;
 
-  // Параметры цели
-  double xy_goal_tolerance_, yaw_goal_tolerance_;
-  double rot_stopped_vel_, trans_stopped_vel_;
+  // Допуски достижения цели
+  double xy_goal_tolerance_;
+  double yaw_goal_tolerance_;
 
+  // Порог скорости: выше — динамический объект
   double speed_threshold_;
 };
 
 } // namespace improved_dwa_local_planner
-
-#endif // IMPROVED_DWA_LOCAL_PLANNER_H_

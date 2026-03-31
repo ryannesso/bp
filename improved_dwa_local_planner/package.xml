@@ -19,6 +19,7 @@
   <build_depend>roscpp</build_depend>
   <build_depend>tf2_ros</build_depend>
   <build_depend>obstacle_detector</build_depend>
+  <build_depend>tracked_obstacle_msgs</build_depend>
 
   <!-- Зависимость, необходимая ДРУГИМ пакетам, чтобы использовать наши сообщения -->
   <build_export_depend>obstacle_detector</build_export_depend>
@@ -34,7 +35,7 @@
   <exec_depend>roscpp</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>obstacle_detector</exec_depend>
-
+<exec_depend>tracked_obstacle_msgs</exec_depend>
   <export>
     <nav_core plugin="${prefix}/planner_plugins.xml" />
   </export>
