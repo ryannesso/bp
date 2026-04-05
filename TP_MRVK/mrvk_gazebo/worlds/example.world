@@ -24,7 +24,7 @@
     <include>
       <name>jersey_barrier_1</name>
       <uri>model://jersey_barrier</uri>
-      <pose frame=''>2.800645 4.142085 0 0 -0 1.5707</pose>
+      <pose frame=''>2.800645 4.142085 0 0 -0 1.5707</pose> <!-- 3.472121 4.142020 0 0 0 1.570700 -->
     </include>
     <include>
       <name>jersey_barrier_2</name>

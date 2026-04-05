@@ -1,23 +1,23 @@
 <launch>
     <!-- 0. ARGUMENTY -->
     <arg name="test_name" default="imrp_1_obst_1"/>
-    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/baylands.world"/>
+    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/example.world"/>
     
     <!-- Súradnice štartu robota -->
     <!-- x: 190.456985 y: -273.546978 z: -0.415242 yaw: 3.062555 for baylands-->
     <!-- x: 0.325792 y: -4.379866 z: 0.164960 yaw: 1.568965 for example-->
-    <arg name="init_x" default="190.456985"/>
-    <arg name="init_y" default="-273.546978"/>
-    <arg name="init_z" default="-0.415242"/>
-    <arg name="init_yaw" default="3.062555"/>
+    <arg name="init_x" default="0.325792"/>
+    <arg name="init_y" default="-4.379866"/>
+    <arg name="init_z" default="0.164960"/>
+    <arg name="init_yaw" default="1.568965"/>
 
     <!-- Cieľ robota -->
     <arg name="goal_x" default="11.421"/>
     <arg name="goal_y" default="-0.054"/> <!-- head (x,y): 11.421 -0.054-->
 
-    <node name="rqt_robot_steering" pkg="rqt_robot_steering" type="rqt_robot_steering">
+    <!-- <node name="rqt_robot_steering" pkg="rqt_robot_steering" type="rqt_robot_steering">
         <param name="default_topic" value="/shoddy/cmd_vel"/>
-    </node>
+    </node> -->
 
     <!-- 1. GAZEBO A ROBOT -->
     <include file="$(find mrvk_gazebo)/launch/gazebo.launch">
@@ -94,7 +94,7 @@
       <param name="odom_frame" value="odom"/>      
       <param name="map_frame" value="map"/>
       <param name="base_frame" value="base_link"/> 
-      <remap from="scan" to="/scan_filtered"/> <!-- Видит ВСЁ для карты -->
+      <remap from="scan" to="/scan_cleaned"/> <!-- Видит ВСЁ для карты -->
       <remap from="odom" to="/odometry/filtered"/>
     </node>
 
@@ -104,7 +104,7 @@
 
 
     <!-- 6.2 Road Detection (ML based) -->
-    <node name="path_detector" pkg="path_detector" type="path_detection.py" output="screen"/>
+    <!-- <node name="path_detector" pkg="path_detector" type="path_detection.py" output="screen"/> -->
 
     <!-- Road Detection (Neural based - NEW) -->
     <!-- <include file="$(find road_segmentation)/launch/road_segmentation.launch">
@@ -149,14 +149,14 @@
     <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_1"
           args="-urdf -model moving_sphere -param sphere_description -x -2.0 -y 0.0 -z 0.3" />
 
-    <node pkg="mrvk_gazebo" type="move_sphere.py" name="move_sphere_controller" output="screen" />
+    <!-- <node pkg="mrvk_gazebo" type="move_sphere.py" name="move_sphere_controller" output="screen" /> -->
 
-    <!-- Sféra 2 (Y = 1.5m pred prvou)
+    <!-- Sféra 2 (Y = 1.5m pred prvou) -->
     <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_2"
-          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" /> -->
+          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" />
 
-    <!-- <node pkg="mrvk_gazebo" type="run_head_of_obstacles.py" name="experiment_master" output="screen">
+    <node pkg="mrvk_gazebo" type="run_experiment.py" name="experiment_master" output="screen">
         <param name="goal_x" value="$(arg goal_x)" />
         <param name="goal_y" value="$(arg goal_y)" />
-    </node>  -->
+    </node>  
 </launch>

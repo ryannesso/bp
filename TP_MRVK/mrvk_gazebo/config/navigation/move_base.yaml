@@ -1,5 +1,5 @@
 base_global_planner: "global_planner/GlobalPlanner"
-base_local_planner: "improved_dwa_local_planner/ImprovedDWALocalPlanner"
+base_local_planner: "improved_dwa_local_planner/ImprovedDWALocalPlanner" #dwa_local_planner/DWAPlannerROS or improved_dwa_local_planner/
 GlobalPlanner:
   use_dijkstra: false     
   use_grid_path: true

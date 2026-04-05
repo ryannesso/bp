@@ -25,8 +25,8 @@ class ExperimentOrchestrator:
         
         # Настройки для движения "в лоб"
         self.amplitude = 4.0               # Сфера будет ходить от -4.0 до +4.0 по Y
-        self.frequency = 0.04        # Частота (скорость движения)
-        self.fixed_x = 0.0                 # Робот едет по X=0, значит и сфера на X=0
+        self.frequency = 0.05        # Частота (скорость движения)
+        self.fixed_x = 0.325792                 # Робот едет по X=0, значит и сфера на X=0
         
         # Цель робота (едет прямо по коридору)
         self.goal_x = rospy.get_param('~goal_x', 0.0) 

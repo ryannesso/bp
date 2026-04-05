@@ -28,7 +28,8 @@ class ExperimentOrchestrator:
         # Nastavenia pohybu sfér (kmitanie zľava-doprava)
         self.amplitude = 3.0              
         self.frequency = 0.08             
-        self.s2_y_pos = 1.5               # Fixná Y súradnica druhej sféry
+        self.s1_y_pos = 1.5               # Fixná Y súradnica prvej sféry
+        self.s2_y_pos = 0.0               # Fixná Y súradnica druhej sféry
         
         # Cieľ robota (vysoko v mape)
         self.goal_x = rospy.get_param('~goal_x', 11.421)
@@ -113,7 +114,7 @@ class ExperimentOrchestrator:
             try: self.set_state(st)
             except: pass
 
-        update_gz(self.s1_name, x1, 0.0, vx1)
+        update_gz(self.s1_name, x1, self.s1_y_pos, vx1)
         update_gz(self.s2_name, x2, self.s2_y_pos, vx2)
 
         # 3. ODOM PRE DETEKTOR
@@ -123,7 +124,7 @@ class ExperimentOrchestrator:
             o.twist.twist.linear.x = vx
             p.publish(o)
 
-        pub_o(self.pub_odom1, x1, 0.0, vx1)
+        pub_o(self.pub_odom1, x1, self.s1_y_pos, vx1)
         pub_o(self.pub_odom2, x2, self.s2_y_pos, vx2)
 
         # 4. ZÁPIS CIEST PRE MATLAB
@@ -141,7 +142,7 @@ class ExperimentOrchestrator:
                 # Sféra 1
                 ps_s1 = PoseStamped(); ps_s1.header.stamp = now
                 ps_s1.pose.position.x = x1 - self.init_x
-                ps_s1.pose.position.y = 0.0 - self.init_y
+                ps_s1.pose.position.y = self.s1_y_pos - self.init_y
                 self.path_s1.poses.append(ps_s1)
 
                 # Sféra 2
@@ -156,16 +157,9 @@ class ExperimentOrchestrator:
                 self.last_recorded_time = now
 
     def start_experiment(self):
-        # 1. Ponecháme čas na stabilizáciu (všetko už stojí na svojom mieste z launchu)
-        warmup = 15
-        rospy.loginfo(f"Stabilizácia senzorov a SLAMu... Čakám {warmup}s.")
-        rospy.sleep(warmup)
         
         # 2. Skontrolujeme, či detektor už vidí prekážky
         start_wait = rospy.get_time()
-        while self.obs_count < 2 and (rospy.get_time() - start_wait) < 10:
-            rospy.loginfo_throttle(2, f"Čakám na detekciu sfér ({self.obs_count}/2)...")
-            rospy.sleep(0.5)
 
         # 3. Spustíme nahrávanie
         bag_dir = os.path.expanduser("~/catkin_ws/src/TP_MRVK/mrvk_gazebo/bags")

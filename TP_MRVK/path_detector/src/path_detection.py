@@ -22,6 +22,7 @@ class MLPathDetectorNode:
         self.image_sub = rospy.Subscriber("/camera/image_raw", Image, self.image_callback, queue_size=1)
         self.path_pub = rospy.Publisher("/shoddy/detected_path", DetectedPath, queue_size=1)
         self.vis_pub = rospy.Publisher("/path_detector/debug_image", Image, queue_size=1)
+        self.mask_pub = rospy.Publisher("/path_detector/mask", Image, queue_size=1)
         
         rospy.loginfo("ML Path Detector initialized.")
 
@@ -82,6 +83,9 @@ class MLPathDetectorNode:
         # Просто красим все "не-дорожные" пиксели в красный цвет
         # [0, 0, 255] в BGR это красный
         vis_img[not_road] = [0, 0, 255]
+        
+        # Публикуем ЧБ маску (дорога = 255, остальное = 0)
+        self.mask_pub.publish(self.bridge.cv2_to_imgmsg(final_mask, "mono8"))
         
         # Публикуем для визуализации
         self.vis_pub.publish(self.bridge.cv2_to_imgmsg(vis_img, "bgr8"))

@@ -33,6 +33,9 @@ public:
   bool computeVelocityCommands(geometry_msgs::Twist &cmd_vel) override;
 
 private:
+  // --- ПАМЯТЬ ОБЪЕКТОВ ---
+  std::map<int, ros::Time> passed_obstacles_;
+
   // ---------------------------------------------------------------------------
   // СТРУКТУРА ТРАЕКТОРИИ
   // ---------------------------------------------------------------------------
@@ -42,10 +45,13 @@ private:
     double cost = -1.0;
     std::vector<geometry_msgs::PoseStamped> poses;
     int collision_pose_idx = -1;
-    geometry_msgs::Point
-        obstacle_pos; // Предсказанная позиция объекта в момент удара
-    geometry_msgs::Point
-        obstacle_start_pos; // Начальная позиция объекта (для стрелки)
+    geometry_msgs::Point obstacle_pos; // Предсказанная позиция объекта в момент удара
+    geometry_msgs::Point obstacle_start_pos; // Начальная позиция объекта (для стрелки)
+    
+    // Debug variables
+    double debug_alpha = 0.0;
+    double debug_turning_bonus = 0.0;
+    double debug_speed_bonus = 0.0;
   };
 
   // ---------------------------------------------------------------------------
@@ -73,7 +79,7 @@ private:
 
   // Оценка направления движения относительно вектора скорости объекта
   // Аргументы: скорость робота, поза робота, данные об объекте
-  double calculate_dis_hv(double robot_vx,
+  double calculate_dis_hv(const Trajectory &traj,
                           const geometry_msgs::PoseStamped &robot_pose,
                           const tracked_obstacle_msgs::TrackedCircle &obs);
 
@@ -83,6 +89,9 @@ private:
   double calculate_dis_fp(Trajectory &traj,
                           const tracked_obstacle_msgs::TrackedCircle &obs,
                           double safety_multiplier = 1.0);
+
+  // Расчёт коэффициента безопасности на основе состояния объекта
+  double getSafetyMultiplier(const tracked_obstacle_msgs::TrackedCircle &obs);
 
   // ---------------------------------------------------------------------------
   // ВИЗУАЛИЗАЦИЯ
@@ -140,6 +149,15 @@ private:
 
   // Порог скорости: выше — динамический объект
   double speed_threshold_;
+
+  // Новые параметры дистанции и безопасности
+  double robot_radius_;
+  double safe_clearance_dist_;
+  double hard_collision_buffer_;
+  double radar_range_;
+  double safety_mult_unstable_;
+  double safety_mult_ghost_;
+  double safety_mult_ghost_unstable_;
 };
 
 } // namespace improved_dwa_local_planner
