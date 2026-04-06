@@ -35,36 +35,83 @@ ImprovedDWALocalPlanner::~ImprovedDWALocalPlanner() {}
 // =============================================================================
 void ImprovedDWALocalPlanner::trackedObstaclesCallback(
     const tracked_obstacle_msgs::TrackedCircleArray::ConstPtr &msg) {
-  last_tracked_obstacles_ = *msg;
+  
+  static std::map<int, ros::Time> consumed_ghosts;
+  ros::Time now = ros::Time::now();
+  for (auto it = consumed_ghosts.begin(); it != consumed_ghosts.end();) {
+    if ((now - it->second).toSec() > 2.0) {
+      it = consumed_ghosts.erase(it);
+    } else {
+      ++it;
+    }
+  }
 
-  // Режим "Радара": если нет активного плана — всё равно считаем коллизии для
-  // отладки
-  if (global_plan_.empty() && initialized_) {
-    std::vector<Trajectory> debug_trajs;
-    double step_x = max_vel_x_ / 4.0;
-    double step_th = (2.0 * max_vel_th_) / 10.0;
+  tracked_obstacle_msgs::TrackedCircleArray processed_obstacles;
+  processed_obstacles.header = msg->header;
+  
+  std::vector<tracked_obstacle_msgs::TrackedCircle> modified_circles = msg->circles;
+  std::vector<bool> kill_inactive(modified_circles.size(), false);
 
-    for (double vx = 0.0; vx <= max_vel_x_ + 1e-3; vx += step_x) {
-      for (double vth = -max_vel_th_; vth <= max_vel_th_ + 1e-3;
-           vth += step_th) {
-        Trajectory traj = generateTrajectory(vx, vth);
-        traj.cost = 1.0;
-
-        for (const auto &tracked_obs : last_tracked_obstacles_.circles) {
-          double v_obs =
-              std::hypot(tracked_obs.velocity.x, tracked_obs.velocity.y);
-          if (v_obs > speed_threshold_ || tracked_obs.is_ghost) {
-            double multiplier = getSafetyMultiplier(tracked_obs);
-            if (calculate_dis_fp(traj, tracked_obs, multiplier) < (hard_collision_buffer_ * 0.75)) {
-              traj.cost = -1.0;
-            }
-          }
-        }
-        debug_trajs.push_back(traj);
+  // Предварительно удаляем призраков, которых уже недавно "съел" активный объект,
+  // чтобы детектор не спамил ими на пустой дороге после того как объект уедет.
+  for (size_t i = 0; i < modified_circles.size(); ++i) {
+    if (modified_circles[i].is_ghost || modified_circles[i].is_unstable) {
+      if (consumed_ghosts.find(modified_circles[i].memory_id) != consumed_ghosts.end()) {
+        kill_inactive[i] = true;
       }
     }
-    publishMarkers(debug_trajs);
-    publishTrackedObstaclesViz();
+  }
+
+  // Переподключение ID (наследование старых ID от неактивных к новым объектам)
+  for (size_t i = 0; i < modified_circles.size(); ++i) {
+    if (!modified_circles[i].is_ghost && !modified_circles[i].is_unstable) {
+      for (size_t j = 0; j < modified_circles.size(); ++j) {
+        bool j_is_inactive = modified_circles[j].is_ghost || modified_circles[j].is_unstable;
+        if (i == j || kill_inactive[j] || !j_is_inactive) continue;
+        
+        double dist = std::hypot(modified_circles[i].center.x - modified_circles[j].center.x, 
+                                 modified_circles[i].center.y - modified_circles[j].center.y);
+        
+        // Берем с запасом 1.45 м (если объект 0.5-1сек был за препятствием и уехал на ~1м)
+        if (dist <= 1.45) {
+          double v_active = std::hypot(modified_circles[i].velocity.x, modified_circles[i].velocity.y);
+          double v_inactive = std::hypot(modified_circles[j].velocity.x, modified_circles[j].velocity.y);
+          
+          bool similar_vector = false;
+          if (v_active > 0.1 && v_inactive > 0.1) {
+            double dot = modified_circles[i].velocity.x * modified_circles[j].velocity.x + 
+                         modified_circles[i].velocity.y * modified_circles[j].velocity.y;
+            double cos_angle = dot / (v_active * v_inactive);
+            // Если векторы направлены примерно в одну сторону (расширил угол до ~70 градусов `cos > 0.3` для компенсации "выруливания")
+            if (cos_angle > 0.3) { 
+              similar_vector = true;
+            }
+          } else {
+            // "Без вектора": если один из объектов (особенно призрак) в окклюзии остановился, а другой активный - мы их сливаем.
+            // Это решает проблему, когда потерянный объект стоит на месте без вектора из-за перекрытия.
+            similar_vector = true; 
+          }
+
+          if (similar_vector) {
+            modified_circles[i].memory_id = modified_circles[j].memory_id;
+            kill_inactive[j] = true; // Неактивный призрак на дороге удаляется, так как "воскрес" 
+            consumed_ghosts[modified_circles[j].memory_id] = now; // Блокируем его повторное появление на пустой дороге
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  for (size_t i = 0; i < modified_circles.size(); ++i) {
+    if (!kill_inactive[i]) {
+      processed_obstacles.circles.push_back(modified_circles[i]);
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(obstacles_mutex_);
+    last_tracked_obstacles_ = processed_obstacles;
   }
 }
 
@@ -170,6 +217,9 @@ bool ImprovedDWALocalPlanner::computeVelocityCommands(
   if (!initialized_)
     return false;
 
+  // Защита от гонок: callback обновляет last_tracked_obstacles_ в другом потоке.
+  std::lock_guard<std::mutex> lock(obstacles_mutex_);
+
   // Чистка старой памяти (удаляем объекты, которые мы "объехали" более 3-4 секунд назад)
   for (auto it = passed_obstacles_.begin(); it != passed_obstacles_.end();) {
     if ((ros::Time::now() - it->second).toSec() > 4.0) {
@@ -203,8 +253,9 @@ bool ImprovedDWALocalPlanner::computeVelocityCommands(
       // Скалярное произведение вектора на объект с вектором взгляда робота
       double look_dot = dx * std::cos(robot_yaw) + dy * std::sin(robot_yaw);
 
-      // Если объект ближе 1.5 метров, и он физически оказался СЗАДИ робота (look_dot < 0)
-      if (dist < 1.5 && look_dot < 0.0) {
+      // Если объект ближе 1.5 метров, и он ФИЗИЧЕСКИ СЗАДИ робота (угол более 110 градусов: look_dot < -0.3 * dist)
+      // Мы поменяли 0.0 на -0.3*dist, чтобы уклонение не отключало угрозу раньше времени!
+      if (dist < 1.5 && look_dot < -0.3 * dist) {
           // Записываем его в память, чтобы отключить предиктивные коридоры на 4 секунды
           passed_obstacles_[obs.memory_id] = ros::Time::now();
       }
@@ -274,7 +325,8 @@ bool ImprovedDWALocalPlanner::computeVelocityCommands(
     }
     // ROS_INFO("[DWA] V=%.2f W=%.2f | Dyn=%d Ghost=%d Unstable=%d", best_traj.vx,
     //          best_traj.vth, dyn, ghost, unstable);
-    ROS_INFO("[DWA] Alpha: %.2f | Speed Bonus: %.2f | Turning Bonus: %.2f",
+    ROS_INFO("[DWA] State: %s | V=%.2f W=%.2f | Alpha: %.2f | SpBonus: %.2f | TrBonus: %.2f",
+             best_traj.debug_state.c_str(), best_traj.vx, best_traj.vth, 
              best_traj.debug_alpha, best_traj.debug_speed_bonus, best_traj.debug_turning_bonus);
   }
 
@@ -346,7 +398,7 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
   double velocity_score = 0.0;
   if (dist_to_goal > 1.0) {
     // В обычном режиме крейсерская скорость 0.5 м/с
-    double cruise_vel = 0.5;
+    double cruise_vel = 0.6;
     // Идеальная оценка (1.0) дается, если скорость точно равна cruise_vel. 
     // Разгон свыше 0.5 штрафуется базовой метрикой (чтобы робот не спешил), 
     // НО этот штраф легко перебивается бонусом за скорость (speed_bonus) при уклонении.
@@ -375,159 +427,150 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
     if (tracked_obs.is_unstable)
       ++unstable_cnt;
 
-    // Считаем активной динамикой тех, кто быстрее 0.2, не обойден
-    bool is_active_dynamic = (v_obs > 0.2) && !is_passed;
-    bool is_relevant = is_active_dynamic || tracked_obs.is_ghost;
-
-    if (!is_relevant) {
-        // Мы все еще должны не врезаться в "обойденные" объекты, но проверим их только как статику.
-        // calculate_dis_fp внутри отключит коридоры для is_passed.
-        if (is_passed || v_obs <= 0.2) {
-             double multiplier = getSafetyMultiplier(tracked_obs);
-             double safety = calculate_dis_fp(traj, tracked_obs, multiplier);
-             if (safety < min_safety_score) min_safety_score = safety;
-        }
-        continue;
-    }
-
+    // Считаем активной динамикой тех, кто не обойден
     double multiplier = getSafetyMultiplier(tracked_obs);
     double safety = calculate_dis_fp(traj, tracked_obs, multiplier);
 
-    if (safety < min_safety_score) {
-      min_safety_score = safety;
-      critical_obs = &tracked_obs;
+    // Если объект помечен как "обойденный" и всё ещё находится сзади робота,
+    // не даём ему становиться critical_obs (иначе он будет удерживать режим уклонения).
+    if (is_passed) {
+      double dx = tracked_obs.center.x - robot_pose.pose.position.x;
+      double dy = tracked_obs.center.y - robot_pose.pose.position.y;
+      double dist = std::hypot(dx, dy);
+      double look_dot = dx * std::cos(robot_yaw) + dy * std::sin(robot_yaw);
+      if (dist < 3.0 && look_dot < -0.2 * dist) {
+        continue;
+      }
+    }
+
+    // --- ПРЕВЕНТИВНАЯ СИСТЕМА РАННЕГО ОБНАРУЖЕНИЯ ---
+    // Критично: не привязываем "угрозу" только к head-on. Иначе боковые пешеходы (≈90°)
+    // никогда не станут critical_obs при safety==1.0.
+    bool is_global_threat = false;
+    if (safety < 1.0) {
+      is_global_threat = true;
+    } else if (!is_passed) {
+      double dist_to_obs = std::hypot(tracked_obs.center.x - robot_pose.pose.position.x,
+                      tracked_obs.center.y - robot_pose.pose.position.y);
+      // Если объект близко — считаем глобальной угрозой, а разруливание пусть решает математика ниже.
+      if (dist_to_obs < 6.0) {
+      is_global_threat = true;
+      }
+    }
+
+    if (safety <= min_safety_score && is_global_threat) {
+      if (safety < min_safety_score || critical_obs == nullptr) {
+          min_safety_score = safety;
+          critical_obs = &tracked_obs;
+      }
     }
   }
 
-  // ROS_INFO_THROTTLE(
-  //     0.5, "[DWA] Obstacles: total=%d | dyn=%d | ghost=%d | unstable=%d",
-  //     total_obs, dynamic_cnt, ghost_cnt, unstable_cnt);
-
-  // 6. Адаптивная логика поведения
+  // 6. Адаптивная логика поведения (ВЕКТОРНАЯ)
   double current_alpha = alpha_;
   double turning_bonus = 0.0;
   double speed_bonus = 0.0;
 
   if (critical_obs != nullptr) {
-    double angle_to_obs =
-        atan2(critical_obs->center.y - robot_pose.pose.position.y,
-              critical_obs->center.x - robot_pose.pose.position.x);
-    double diff_to_obs =
-        std::abs(angles::shortest_angular_distance(robot_yaw, angle_to_obs));
-    double in_front_factor = std::max(0.0, 1.0 - (diff_to_obs / 1.0));
+    double rx = critical_obs->center.x - robot_pose.pose.position.x;
+    double ry = critical_obs->center.y - robot_pose.pose.position.y;
+    double ovx = critical_obs->velocity.x;
+    double ovy = critical_obs->velocity.y;
+    double obs_speed = std::hypot(ovx, ovy);
 
-    double angle_to_robot =
-        atan2(robot_pose.pose.position.y - critical_obs->center.y,
-              robot_pose.pose.position.x - critical_obs->center.x);
-    double obs_vel_angle =
-        atan2(critical_obs->velocity.y, critical_obs->velocity.x);
+    // Проверка "спереди ли объект" (чтобы не включать head-on/S по объектам позади)
+    double angle_to_obs = atan2(ry, rx);
+    double front_diff = std::abs(angles::shortest_angular_distance(robot_yaw, angle_to_obs));
+    bool in_front_cone = (front_diff < 1.2); // ~69° конус спереди
 
-    double danger_scale = getSafetyMultiplier(*critical_obs);
-    double aggressive_danger =
-        in_front_factor * std::min(danger_scale, 1.0);
+    double angle_to_robot = atan2(-ry, -rx);
+    double obs_vel_angle = atan2(ovy, ovx);
+    double head_on_diff =
+        std::abs(angles::shortest_angular_distance(obs_vel_angle, angle_to_robot));
 
-    // ПРИЧИНА "СЛЕДОВАНИЯ ЗА ОБЪЕКТОМ" ИСПРАВЛЕНА:
-    // Функция calculate_dis_hv заставляет робота отворачиваться (смотреть в другую сторону) от объекта. 
-    // Если объект пересекает наш путь и уходит направо, робот подсознательно пытался отвернуться налево.
-    // Из-за этого он буквально заруливал прямо в пустой след движущегося человека!
-    // Теперь мы умножаем это "отторжение" на aggressive_danger:
-    // как только объект прошел нас (или не опасен), магнит отключается, и робот не крутит за ним рулем!
-    critical_heading_score = calculate_dis_hv(traj, robot_pose, *critical_obs) * aggressive_danger;
+    // ВЕКТОРНОЕ ПРОИЗВЕДЕНИЕ: знак определяет, с какой стороны безопаснее проходить "за спиной".
+    double cross_z = rx * ovy - ry * ovx;
 
-    double evade_side = 1.0;
-    if (aggressive_danger > 0.5) {
-      // ПРЕДСКАЗУЕМОЕ УКЛОНЕНИЕ:
-      // Вместо текущего положения объекта, смотрим куда он приедет через ~1 сек
-      // Это позволяет уклоняться от вектора скорости, а не только от центра тела
-      double t_pred = 1.0;
-      double future_obs_x = critical_obs->center.x + critical_obs->velocity.x * t_pred;
-      double future_obs_y = critical_obs->center.y + critical_obs->velocity.y * t_pred;
-      double angle_to_future_obs = atan2(future_obs_y - robot_pose.pose.position.y,
-                                         future_obs_x - robot_pose.pose.position.x);
+    // Важно: S-манёвр только для ДИНАМИКИ и только СПЕРЕДИ.
+    bool is_head_on = (obs_speed > 0.1 && in_front_cone && head_on_diff < 0.8);
 
-      double diff_future = angles::shortest_angular_distance(angle_to_obs, angle_to_future_obs);
-      double head_on_diff = std::abs(angles::shortest_angular_distance(obs_vel_angle, angle_to_robot));
+    if (obs_speed <= 0.1) {
+      // Медленная/статичная цель: не включаем S-маниёвр, просто мягко выравниваемся/объезжаем.
+      traj.debug_state = "STATIC_AVOID";
+      critical_heading_score = 0.0;
+      current_alpha = alpha_ * (1.0 + 3.0 * heading_score);
+      turning_bonus = 2.0 * heading_score;
+      speed_bonus += traj.vx * 2.0;
+    } else if (is_head_on) {
+      // ЛОБОВОЕ СТОЛКНОВЕНИЕ (S-МАНЕВР)
+      traj.debug_state = "S_MANEUVER";
+      current_alpha = 0.05; // отвязываем от пути
 
-      // Явное правило при лобовом столкновении (в пределах ~10 градусов)
-      if (head_on_diff < 0.17) {
-        evade_side = -1.0; 
-      } else {
-        evade_side = (diff_future > 0) ? -1.0 : 1.0;
-      }
+      // Награда за "отворачивание" от объекта (используем существующий хелпер)
+      critical_heading_score = calculate_dis_hv(traj, robot_pose, *critical_obs) * 0.5;
 
-      current_alpha = alpha_ * 0.8; 
-
-      // СЕКРЕТ S-МАНЕВРА №2: Умное ожидание! 
-      // Вместо жесткого угла в 0.7, используем более точную модель для Head-on (около 135-180 градусов, т.е. > 2.3 радиан ~ 130+ град)
-      // head_on_diff меряет угол между вектором скорости объекта и вектором на робота.
-      // Если объект летит НА робота, head_on_diff близок к 0. Встречное движение.
-      bool is_head_on = (head_on_diff < 0.8); // ~45 градусов отклонения от идеального лобового
-
-      if (is_head_on) {
-          if (traj.vth * evade_side > 0 && traj.vx > 0.1) {
-              turning_bonus += 0.5; 
-              speed_bonus += 1.5 * traj.vx;              
-          } else if (std::abs(traj.vx) < 0.1) {
-              if (min_safety_score < 0.5) {
-                  speed_bonus -= 10.0;                       
-              }
-          } else {
-              turning_bonus -= 2.0;                      
-          }
-      } else {
-          // ПОПЕРЕЧНОЕ ДВИЖЕНИЕ ИЛИ РАЗЪЕЗД СБОКУ ПОСЛЕ УВОРОТА
-          // Важное разделение: 
-          // 1. Опасность < 0.35 (это 0.0 - тело, 0.1 - красный коридор, 0.2 - hard limit). Это реальная угроза перед бампером!
-          // 2. Опасность 0.4-1.0 (это soft limit). Мы просто проезжаем близко сбоку. Тормозить не нужно!
-          if (min_safety_score < 0.35) {
-              double dist_to_obs = std::hypot(critical_obs->center.x - robot_pose.pose.position.x, 
-                                              critical_obs->center.y - robot_pose.pose.position.y);
-              
-              nav_msgs::Odometry base_odom;
-              odom_helper_.getOdom(base_odom);
-              double current_vx = base_odom.twist.twist.linear.x;
-
-              // ТОЧКА НЕВОЗВРАТА: экстренный побег с линии атаки
-              if (current_vx > 0.15 && dist_to_obs < 1.5) {
-                  speed_bonus += 2.0 * traj.vx;  // Педаль в пол!
-                  turning_bonus -= 1.0 * std::abs(traj.vth);
-              } else {
-                  speed_bonus -= 2.0 * traj.vx; // ТОРМОЗИМ!
-                  // ЖЕСТКИЙ ЗАПРЕТ на виляние рулем в хвост объекта ради скорости!
-                  // Штраф в 10 раз мощнее, чтобы он не искал математические лазейки для объезда.
-                  turning_bonus -= 10.0 * std::abs(traj.vth);
-              }
-          } else {
-              // МЫ ВНЕ КРАСНОГО КОРИДОРА (Объект просто где-то сбоку или сзади)
-              // Робот сейчас в безопасности. Нужно немедленно вернуться на маршрут.
-              // Раньше тут стоял жесткий штраф на поворот руля (turning_bonus -= 3.0),
-              // из-за чего робот не мог повернуть обратно на маршрут и ехал прямо,
-              // "следуя" за объектом. Теперь мы позволяем ему поворачивать.
-              
-              current_alpha = alpha_ * 5.0; // В 5 раз сильнее тянем к пути!
-              turning_bonus = 0.0;
-          }
+      // По правилам: предпочтительно уходить вправо (vth < 0)
+      if (traj.vth < -0.1 && traj.vx > 0.1) {
+        turning_bonus += 2.0 * std::abs(traj.vth);
+        speed_bonus += 2.0 * traj.vx;
+      } else if (traj.vth > 0.1) {
+        // Запрет рулить влево (под встречку)
+        turning_bonus -= 4.0 * std::abs(traj.vth);
+      } else if (std::abs(traj.vx) < 0.1) {
+        // Штраф за бездействие при угрозе
+        speed_bonus -= 5.0;
       }
     } else {
-      // КРАСНОГО КОРИДОРА НЕТ И ОБЪЕКТ УЖЕ НЕ ПЕРЕД НАМИ (aggressive_danger <= 0.5)
-      // В этом случае единственный приоритет - вернуть нос на цель!
-      double angle_diff = angles::shortest_angular_distance(robot_yaw, angle_to_goal);
-      
-      if ((traj.vth * angle_diff) > 0) {
-        turning_bonus += 1.0 * std::abs(traj.vth); // Награждаем поворот к цели
-      } else {
-        turning_bonus -= 2.0 * std::abs(traj.vth); // ЖЕСТКО штрафуем поворот от цели
-      }
-      
-      speed_bonus += 0.5;
-      current_alpha = alpha_ * 5.0; // Жестко привязываем к зеленой линии
-    }
+      // ПОПЕРЕЧНОЕ ДВИЖЕНИЕ (объект идёт сбоку)
+      critical_heading_score = 0.0;
 
-    // ROS_INFO_THROTTLE(
-    //     0.2,
-    //     "[DWA] CritObs: ghost=%d unstable=%d | aggr=%.2f | multiplier=%.1f",
-    //     (int)critical_obs->is_ghost, (int)critical_obs->is_unstable,
-    //     aggressive_danger, getSafetyMultiplier(*critical_obs));
+      double pass_behind_sign = (cross_z > 0.0) ? 1.0 : -1.0;
+
+      if (min_safety_score < 0.45) {
+        // ЭКСТРЕННАЯ СИТУАЦИЯ
+        if (traj.vth * pass_behind_sign > 0.1) {
+          traj.debug_state = "PASS_BEHIND";
+          turning_bonus += 2.5 * std::abs(traj.vth);
+          speed_bonus += 2.0 * traj.vx; // газу за спину
+        } else {
+          traj.debug_state = "EMERGENCY_STOP";
+          speed_bonus -= 10.0 * std::abs(traj.vx);
+          turning_bonus -= 10.0 * std::abs(traj.vth);
+        }
+      } 
+      else {
+        // МЯГКИЙ РАЗЪЕЗД
+        traj.debug_state = "SMOOTH_AVOID";
+        current_alpha = alpha_ * (1.0 + 3.0 * heading_score);
+        turning_bonus = 2.0 * heading_score;
+          // Мягко поощряем траектории, которые ведут "за спину" объекта
+          // (в ту же сторону, что и PASS_BEHIND), но не делаем это жёстким правилом.
+          // Добавляем небольшой bias по знаку, чтобы DWA не залипал на W≈0.
+          const double behind_turn = traj.vth * pass_behind_sign;
+          if (behind_turn > 0.02) {
+            turning_bonus += 0.25 + 0.6 * std::abs(traj.vth);
+            speed_bonus += 0.5 * traj.vx;
+          } else if (behind_turn < -0.02) {
+            turning_bonus -= 0.25 + 0.3 * std::abs(traj.vth);
+          }
+        speed_bonus += traj.vx * 3.0;
+      }
+    }
+  } else {
+    // ПУТЬ СВОБОДЕН (возврат на зелёную линию + защита от 360° "кругаля")
+    traj.debug_state = "IDLE";
+
+    double ideal_yaw = tf2::getYaw(local_plan[closest_idx].pose.orientation);
+    double yaw_diff = angles::shortest_angular_distance(robot_yaw, ideal_yaw);
+
+    if (std::abs(yaw_diff) > 0.4) {
+      if (yaw_diff * traj.vth < 0.0) {
+        turning_bonus -= 5.0 * std::abs(traj.vth); // штраф за поворот не туда
+      } else {
+        turning_bonus += 0.0 * heading_score;
+      }
+    }
+    speed_bonus += traj.vx * 0.0;
   }
 
   if (min_safety_score < 0.05) {
@@ -634,7 +677,7 @@ double ImprovedDWALocalPlanner::calculate_dis_fp(
         if (dot > 0) {
             double proj_len = dot / v_obs;
             // Проецируем коридор на 5.5 секунд вперед 
-            if (proj_len < v_obs * 5.5) {
+            if (proj_len < v_obs * 8.5) {
                 // "Конус неопределенности": чем дальше впереди объекта, тем шире математический коридор.
                 // Это защищает от внезапных изменений вектора. На каждый метр длины коридор расширяется на 25 см.
                 double dynamic_core_limit = core_limit + (proj_len * 0.01);
@@ -669,20 +712,6 @@ double ImprovedDWALocalPlanner::calculate_dis_fp(
       return 0.0; // Жесткий сброс = Остановка
   }
 
-  if (corridor_hit) {
-      // ИСКЛЮЧЕНИЕ ДЛЯ ОЖИДАНИЯ: Если мы стоим (или почти стоим), 
-      // и объект физически нас не заденет (он проедет МИМО впереди),
-      // то игнорируем математический коридор! Это позволяет пропускать горизонтальный трафик.
-      double hard_limit = (obs.radius + robot_radius_ + hard_collision_buffer_) * safety_multiplier;
-      if (std::abs(traj.vx) < 0.05 && min_dist_sq > hard_limit * hard_limit) {
-          // Стоять безопасно, коридор не учитываем.
-      } else {
-          // Оставляем 0.3 чтобы она выжила (прошла проверку < 0.05),
-          // но это хуже, чем остановиться (1.0).
-          return 0.3;
-      }
-  }
-
   // ВАЖНО: hard_limit обязательно должен учитывать габариты самого робота (robot_radius_)! 
   // Иначе робот будет генерировать траектории сквозь край объекта.
   double hard_limit = (obs.radius + robot_radius_ + hard_collision_buffer_) * safety_multiplier;
@@ -711,7 +740,7 @@ double ImprovedDWALocalPlanner::calculate_dis_fp(
     traj.obstacle_pos.z = 0;
     traj.obstacle_start_pos = obs.center;
     
-    return 0.2;
+    return 0.3;
   }
 
   // ГРАДИЕНТ ОТТАЛКИВАНИЯ (Soft Limit)
@@ -720,10 +749,22 @@ double ImprovedDWALocalPlanner::calculate_dis_fp(
   double soft_limit = (obs.radius + robot_radius_ + safe_clearance_dist_) * safety_multiplier;
   
   if (min_dist < soft_limit) {
-    // Плавно занижаем оценку при приближении от soft_limit к hard_limit
+    // Плавно занижаем оценку при приближении от soft_limit к hard_limit.
+    // Базовая оценка 0.35 гарантирует, что чистое огибание объекта (даже близкое)
+    // будет иметь safety_score > 0.3 и не вызовет панического торможения.
     double score = (min_dist - hard_limit) / (soft_limit - hard_limit);
     if (score < 0) score = 0;
-    return 0.1 + 0.9 * std::pow(score, 2);
+
+    // Мягкий штраф за коридор вместо жесткого раннего return: режем баллы, но не убиваем маневр.
+    if (corridor_hit && std::abs(traj.vx) > 0.05) {
+      return (0.35 + 0.65 * std::pow(score, 2)) * 0.5; // срезаем 50%
+    }
+    return 0.35 + 0.65 * std::pow(score, 2);
+  }
+
+  // Даже на свободном месте коридор — это риск: небольшой штраф для движущихся траекторий.
+  if (corridor_hit && std::abs(traj.vx) > 0.05) {
+    return 0.5;
   }
 
   return 1.0;

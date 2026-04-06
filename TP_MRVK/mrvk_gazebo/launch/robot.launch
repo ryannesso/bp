@@ -6,7 +6,7 @@
     <!-- Súradnice štartu robota -->
     <!-- x: 190.456985 y: -273.546978 z: -0.415242 yaw: 3.062555 for baylands-->
     <!-- x: 0.325792 y: -4.379866 z: 0.164960 yaw: 1.568965 for example-->
-    <arg name="init_x" default="0.325792"/>
+    <arg name="init_x" default="-0.205792"/>
     <arg name="init_y" default="-4.379866"/>
     <arg name="init_z" default="0.164960"/>
     <arg name="init_yaw" default="1.568965"/>
@@ -152,10 +152,10 @@
     <!-- <node pkg="mrvk_gazebo" type="move_sphere.py" name="move_sphere_controller" output="screen" /> -->
 
     <!-- Sféra 2 (Y = 1.5m pred prvou) -->
-    <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_2"
-          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" />
+    <!-- <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_2"
+          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" /> -->
 
-    <node pkg="mrvk_gazebo" type="run_experiment.py" name="experiment_master" output="screen">
+    <node pkg="mrvk_gazebo" type="run_head_of_obstacles.py" name="experiment_master" output="screen">
         <param name="goal_x" value="$(arg goal_x)" />
         <param name="goal_y" value="$(arg goal_y)" />
     </node>  

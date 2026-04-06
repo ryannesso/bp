@@ -11,6 +11,7 @@
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <ros/ros.h>
+#include <mutex>
 #include <tf2_ros/buffer.h>
 #include <visualization_msgs/MarkerArray.h>
 
@@ -52,6 +53,7 @@ private:
     double debug_alpha = 0.0;
     double debug_turning_bonus = 0.0;
     double debug_speed_bonus = 0.0;
+    std::string debug_state = "IDLE";
   };
 
   // ---------------------------------------------------------------------------
@@ -119,6 +121,9 @@ private:
   // ---------------------------------------------------------------------------
   std::vector<geometry_msgs::PoseStamped> global_plan_;
   tracked_obstacle_msgs::TrackedCircleArray last_tracked_obstacles_;
+
+  // Синхронизация доступа к last_tracked_obstacles_ между callback и планировщиком
+  std::mutex obstacles_mutex_;
 
   // ---------------------------------------------------------------------------
   // ПАРАМЕТРЫ (загружаются из ROS param server в initialize())
