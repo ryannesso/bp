@@ -9,17 +9,18 @@ local_costmap:
   width: 10.0
   height: 10.0
   resolution: 0.15
-  transform_tolerance: 0.8
+  transform_tolerance: 1.5    # збільшено з 0.8: при старті Gazebo sim-time може відставати
 
   # --- Список Плагинов ---
   # InflationLayer раздувает только то, что было добавлено ПРЕДЫДУЩИМИ слоями.
   # Поэтому мы ставим инфляцию лазера выше, чем инфляцию дороги.
   plugins:
-    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}  # Лазер
-    - {name: laser_inflation, type: "costmap_2d::InflationLayer"}
-    - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (облако точек)
-    - {name: road_layer,      type: "costmap_2d::DetectedPathLayer"}    # Дорога (custom plugin)
-    - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие дороги/травы (слабое)
+    - {name: obstacle_layer,         type: "costmap_2d::ObstacleLayer"}  # Лазер
+    - {name: laser_inflation,        type: "costmap_2d::InflationLayer"}
+    - {name: dynamic_obstacle_layer, type: "costmap_2d::DynamicObstacleLayer"}  # Очистка динамики
+    - {name: grass_layer,            type: "costmap_2d::ObstacleLayer"}  # Трава (облако точек)
+    - {name: road_layer,             type: "costmap_2d::DetectedPathLayer"}    # Дорога (custom plugin)
+    - {name: road_inflation,         type: "costmap_2d::InflationLayer"}  # Раздутие дороги/травы (слабое)
     
   obstacle_range: 3.5
   raytrace_range: 4.2

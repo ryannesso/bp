@@ -1,0 +1,43 @@
+# Standalone debug global costmap fed only by /scan_static_slam
+# Loaded under node private namespace: ~costmap
+
+global_frame: map
+robot_base_frame: base_link
+
+update_frequency: 5.0
+publish_frequency: 2.0
+transform_tolerance: 0.5
+
+rolling_window: true
+static_map: false
+width: 500.0
+height: 500.0
+resolution: 0.5
+
+# plugins:
+#   - {name: static_layer, type: "costmap_2d::StaticLayer"}
+#   - {name: debug_scan_static_layer, type: "costmap_2d::ObstacleLayer"}
+#   - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+# static_layer:
+#   enabled: true
+#   map_topic: /map
+
+# debug_scan_static_layer:
+#   enabled: true
+#   observation_sources: scan_static_debug
+#   scan_static_debug:
+#     data_type: LaserScan
+#     topic: /scan_static_slam
+#     sensor_frame: sensor_laser_link
+#     marking: true
+#     clearing: true
+#     footprint_clearing_enabled: true
+#     observation_persistence: 0.2
+#   obstacle_range: 4.5
+#   raytrace_range: 5.0
+
+# inflation_layer:
+#   enabled: true
+#   inflation_radius: 1.0
+#   cost_scaling_factor: 6.0

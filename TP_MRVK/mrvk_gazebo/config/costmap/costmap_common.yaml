@@ -42,3 +42,14 @@ road_layer:
 # --- Настройки инфляции ---
 inflation_layer:
   inflation_radius: 0.75
+
+# --- Слой очистки динамических объектов ---
+# Ставится ПОСЛЕ obstacle_layer и laser_inflation.
+# Затирает FREE_SPACE в ячейках где известны динамические объекты.
+dynamic_obstacle_layer:
+  enabled: true
+  tracked_topic: /obstacles_tracked    # топик от dynamic_filter
+  clear_radius_buffer: 0.40            # метры, добавляются к радиусу объекта
+  clear_ghost_objects: true            # очищать также экстраполированные призраки
+  ghost_ttl: 2.0                       # макс. возраст призрака для очистки (сек)
+  static_lethal_only: false            # false = очищаем и lethal ячейки от лазера

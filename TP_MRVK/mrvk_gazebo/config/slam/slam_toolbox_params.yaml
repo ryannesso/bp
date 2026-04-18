@@ -17,6 +17,8 @@ do_loop_closing: true            # ВЫКЛЮЧЕНО: Полный запрет
 loop_closure_search_radius: 0.1
 
 # === ПАРАМЕТРЫ СКАНИРОВАНИЯ ===
+# scan ремаппится на /scan_cleaned в robot.launch; дублируем здесь для ясности
+scan_topic: /scan_cleaned
 minimum_travel_distance: 0.15
 minimum_travel_heading: 0.15
 scan_buffer_size: 150

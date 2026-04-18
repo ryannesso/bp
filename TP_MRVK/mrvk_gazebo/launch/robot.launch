@@ -128,6 +128,7 @@
         <rosparam file="$(find mrvk_gazebo)/config/costmap/global_costmap.yaml" command="load" />
         <rosparam file="$(find mrvk_gazebo)/config/navigation/move_base.yaml" command="load"/>
         <rosparam file="$(find mrvk_gazebo)/config/navigation/improved_dwa_params.yaml" command="load" />
+        
         <remap from="/cmd_vel" to="/shoddy/cmd_vel"/>
         <remap from="odom" to="/odometry/filtered"/>  
     </node>
@@ -152,10 +153,10 @@
     <!-- <node pkg="mrvk_gazebo" type="move_sphere.py" name="move_sphere_controller" output="screen" /> -->
 
     <!-- Sféra 2 (Y = 1.5m pred prvou) -->
-    <!-- <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_2"
-          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" /> -->
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_sphere_2"
+          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" />
 
-    <node pkg="mrvk_gazebo" type="run_head_of_obstacles.py" name="experiment_master" output="screen">
+    <node pkg="mrvk_gazebo" type="run_experiment.py" name="experiment_master" output="screen">
         <param name="goal_x" value="$(arg goal_x)" />
         <param name="goal_y" value="$(arg goal_y)" />
     </node>  

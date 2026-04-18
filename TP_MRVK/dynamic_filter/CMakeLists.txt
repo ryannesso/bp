@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(dynamic_filter)
 
-# ШАГ 1: ИЩЕМ ВСЕ ROS-ЗАВИСИМОСТИ (включая obstacle_detector)
+# Dynamic mask layer for costmap
 find_package(catkin REQUIRED COMPONENTS
   laser_geometry
   message_filters
@@ -13,9 +13,8 @@ find_package(catkin REQUIRED COMPONENTS
   obstacle_detector
   tracked_obstacle_msgs
 )
-
-# ШАГ 2: ИЩЕМ НЕ-ROS ЗАВИСИМОСТИ
 find_package(Eigen3 REQUIRED)
+
 
 # ШАГ 3: ОБЪЯВЛЯЕМ ПАКЕТ
 catkin_package(

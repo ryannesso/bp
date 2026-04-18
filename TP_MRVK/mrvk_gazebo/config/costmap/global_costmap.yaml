@@ -14,12 +14,13 @@ global_costmap:
   
   # --- Плагины ---
   plugins:
-    - {name: static_layer,    type: "costmap_2d::StaticLayer"}
-    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
-    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
-    - {name: grass_layer,     type: "costmap_2d::ObstacleLayer"}  # Трава (чистящийся лазер)
-    - {name: road_layer,      type: "costmap_2d::DetectedPathLayer"}    # Дорога (custom plugin)
-    - {name: road_inflation,  type: "costmap_2d::InflationLayer"}  # Раздутие травы (слабое)
+    - {name: static_layer,           type: "costmap_2d::StaticLayer"}
+    - {name: obstacle_layer,         type: "costmap_2d::ObstacleLayer"}
+    - {name: inflation_layer,        type: "costmap_2d::InflationLayer"}
+    - {name: dynamic_obstacle_layer, type: "costmap_2d::DynamicObstacleLayer"}  # Очистка динамики
+    - {name: grass_layer,            type: "costmap_2d::ObstacleLayer"}  # Трава (чистящийся лазер)
+    - {name: road_layer,             type: "costmap_2d::DetectedPathLayer"}    # Дорога (custom plugin)
+    - {name: road_inflation,         type: "costmap_2d::InflationLayer"}  # Раздутие травы (слабое)
 
   # --- Настройки плагинов ---
   static_layer:

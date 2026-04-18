@@ -33,7 +33,23 @@ public:
   bool isGoalReached() override;
   bool computeVelocityCommands(geometry_msgs::Twist &cmd_vel) override;
 
+
+  struct Gap {
+    double gap_center_x;
+    double gap_center_y;
+    double gap_width;
+    double time_until_closed;  // Время до смыкания (секунды)
+    bool is_viable;
+  };
+
+
 private:
+
+
+  Gap findGapBetweenObjects(
+    const tracked_obstacle_msgs::TrackedCircle &obs1,
+    const tracked_obstacle_msgs::TrackedCircle &obs2,
+    const geometry_msgs::PoseStamped &robot_pose);
   // --- ПАМЯТЬ ОБЪЕКТОВ ---
   std::map<int, ros::Time> passed_obstacles_;
 

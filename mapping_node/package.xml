@@ -1,0 +1,22 @@
+<package format="2">
+  <name>mapping_node</name>
+  <version>0.0.1</version>
+  <description>Node for occupancy grid, ESDF, and ΔESDF mapping.</description>
+  <maintainer email="user@todo.com">TODO: Maintainer</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>tf2_ros</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
+  <build_depend>std_msgs</build_depend>
+
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>tf2_geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+</package>

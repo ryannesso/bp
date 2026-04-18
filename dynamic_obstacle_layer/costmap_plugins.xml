@@ -1,0 +1,11 @@
+<library path="lib/libdynamic_obstacle_layer">
+  <class name="costmap_2d::DynamicObstacleLayer"
+         type="costmap_2d::DynamicObstacleLayer"
+         base_class_type="costmap_2d::Layer">
+    <description>
+      Costmap layer that clears cells occupied by tracked dynamic obstacles.
+      Place after ObstacleLayer so it erases what the laser wrote.
+      Static walls (LETHAL cells from StaticLayer) are preserved.
+    </description>
+  </class>
+</library>
