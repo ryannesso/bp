@@ -10,76 +10,58 @@ from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from nav_msgs.msg import Odometry
 
 
-class FiveSpheresRandomController:
+class NineSpheresDeterministicController:
     def __init__(self):
-        rospy.init_node("five_spheres_random_controller")
+        rospy.init_node("nine_spheres_deterministic_controller")
 
-        self.area_x_min = rospy.get_param("~area_x_min", -4.6)
-        self.area_x_max = rospy.get_param("~area_x_max", 4.6)
-        self.area_y_min = rospy.get_param("~area_y_min", -3.2)
-        self.area_y_max = rospy.get_param("~area_y_max", 5.2)
-        self.sphere_z = rospy.get_param("~sphere_z", 0.3)
+        # Fixed parameters for repeatability
+        self.area_x_min = -4.6
+        self.area_x_max = 4.6
+        self.area_y_min = -3.2
+        self.area_y_max = 5.2
+        self.sphere_z = 0.3
 
         self.goal_x = rospy.get_param("~goal_x", 0.0)
         self.goal_y = rospy.get_param("~goal_y", 7.0)
 
-        self.update_rate_hz = rospy.get_param("~update_rate", 10.0)
-        self.speed_min = rospy.get_param("~speed_min", 0.75)
-        self.speed_max = rospy.get_param("~speed_max", 1.55)
-        self.waypoint_tolerance = rospy.get_param("~waypoint_tolerance", 0.15)
+        self.update_rate_hz = 10.0
+        self.speed_min = 0.75
+        self.speed_max = 1.55
+        self.waypoint_tolerance = 0.15
 
-        # Увеличено время релаксации: сферы будут менять направление ОЧЕНЬ плавно (как тяжелые корабли)
-        self.relaxation_time = rospy.get_param("~relaxation_time", 3.0)
-        # Сильно снижено ускорение: они физически не смогут "дернуться" в сторону
-        self.max_accel = rospy.get_param("~max_accel", 0.4)
-        self.speed_hard_cap = rospy.get_param("~speed_hard_cap", 1.2)
-        # Убран случайный шум
-        self.noise_accel = rospy.get_param("~noise_accel", 0.0)
+        # Physics (Gentle and smooth movement - same as random one but without noise)
+        self.relaxation_time = 3.0
+        self.max_accel = 0.4
+        self.speed_hard_cap = 1.2
+        self.noise_accel = 0.0
 
-        # ОГРОМНЫЙ радиус избегания друг друга:
-        # Так как они неповоротливы, они должны начинать уворачиваться друг от друга очень-очень заранее!
-        self.neighbor_radius = rospy.get_param("~neighbor_radius", 4.0)
-        self.separation_distance = rospy.get_param("~separation_distance", 3.0)
-        # Отталкивание мягкое и плавное
-        self.separation_gain = rospy.get_param("~separation_gain", 1.0)
+        # Social Forces
+        self.neighbor_radius = 4.0
+        self.separation_distance = 3.0
+        self.separation_gain = 1.0
+        self.wall_buffer = 1.5
+        self.wall_gain = 1.0
 
-        self.wall_buffer = rospy.get_param("~wall_buffer", 1.5)
-        self.wall_gain = rospy.get_param("~wall_gain", 1.0)
+        self.repath_min = 6.0
+        self.repath_max = 12.0
+        self.crossing_bias = 0.6
 
-        # Реже меняют цель (едут по предсказуемым длинным прямым/дугам)
-        self.repath_min = rospy.get_param("~repath_min", 6.0)
-        self.repath_max = rospy.get_param("~repath_max", 12.0)
-        self.crossing_bias = rospy.get_param("~crossing_bias", 0.6)
+        self.sphere_names = [
+            f"moving_sphere_{i}" for i in range(1, 10)
+        ]
 
-        self.pause_probability = rospy.get_param("~pause_probability", 0.10)
-        self.pause_min = rospy.get_param("~pause_min", 0.3)
-        self.pause_max = rospy.get_param("~pause_max", 1.2)
-
-        self.spawn_clearance = rospy.get_param("~spawn_clearance", 0.9)
-
-        self.sphere_names = rospy.get_param(
-            "~sphere_names",
-            [
-                "moving_sphere_1",
-                "moving_sphere_2",
-                "moving_sphere_3",
-                "moving_sphere_4",
-                "moving_sphere_5",
-                "moving_sphere_6",
-                "moving_sphere_7",
-                "moving_sphere_8",
-                "moving_sphere_9",
-            ],
-        )
+        # DETERMINISTIC SETUP
+        # Fixed seed ensures that all "random" choices (targets, speeds) 
+        # follow the exact same sequence across every run.
+        random.seed(50) 
 
         self.spheres = {}
-        random.seed()
 
         rospy.wait_for_service("/gazebo/set_model_state")
         self.set_state = rospy.ServiceProxy("/gazebo/set_model_state", SetModelState)
 
         self.move_base_client = actionlib.SimpleActionClient("move_base", MoveBaseAction)
-        rospy.loginfo("[five_spheres] Waiting for move_base action server...")
+        rospy.loginfo("[deterministic_spheres] Waiting for move_base action server...")
         self.move_base_client.wait_for_server()
 
         # Publishers for recording
@@ -90,22 +72,34 @@ class FiveSpheresRandomController:
         self.robot_gt_pub = rospy.Publisher("/robot/ground_truth", Odometry, queue_size=10)
         self.model_states_sub = rospy.Subscriber("/gazebo/model_states", ModelStates, self._model_states_callback)
 
-        self._init_spheres()
+        self._init_spheres_fixed()
         self._send_goal()
 
-    def _rand_point(self, margin=0.2):
-        x = random.uniform(self.area_x_min + margin, self.area_x_max - margin)
-        y = random.uniform(self.area_y_min + margin, self.area_y_max - margin)
+    def _fixed_point(self, index):
+        # Deterministically place 9 spheres in a 3x3 grid pattern to start
+        # This prevents the randomness of the 'sample non-overlapping' logic
+        rows = 3
+        cols = 3
+        cell_w = (self.area_x_max - self.area_x_min) / cols
+        cell_h = (self.area_y_max - self.area_y_min) / rows
+        
+        r = index // cols
+        c = index % cols
+        
+        x = self.area_x_min + (c + 0.5) * cell_w
+        y = self.area_y_min + (r + 0.5) * cell_h
         return x, y
 
     def _new_speed(self):
+        # Uses the fixed seed
         return random.uniform(self.speed_min, self.speed_max)
 
     def _new_repath_time(self, now_t):
+        # Uses the fixed seed
         return now_t + random.uniform(self.repath_min, self.repath_max)
 
     def _new_target(self, current_x, current_y):
-        # Bias toward crossing trajectories so agents often traverse the robot corridor.
+        # Uses the fixed seed logic
         if random.random() < self.crossing_bias:
             if current_x < 0.5 * (self.area_x_min + self.area_x_max):
                 tx = random.uniform(self.area_x_max - 1.2, self.area_x_max - 0.2)
@@ -113,24 +107,15 @@ class FiveSpheresRandomController:
                 tx = random.uniform(self.area_x_min + 0.2, self.area_x_min + 1.2)
             ty = random.uniform(self.area_y_min + 0.2, self.area_y_max - 0.2)
             return tx, ty
-        return self._rand_point()
+        
+        tx = random.uniform(self.area_x_min + 0.2, self.area_x_max - 0.2)
+        ty = random.uniform(self.area_y_min + 0.2, self.area_y_max - 0.2)
+        return tx, ty
 
-    def _sample_non_overlapping_start(self):
-        for _ in range(200):
-            x, y = self._rand_point()
-            ok = True
-            for s in self.spheres.values():
-                if math.hypot(x - s["x"], y - s["y"]) < self.spawn_clearance:
-                    ok = False
-                    break
-            if ok:
-                return x, y
-        return self._rand_point()
-
-    def _init_spheres(self):
+    def _init_spheres_fixed(self):
         now_t = rospy.Time.now().to_sec()
-        for name in self.sphere_names:
-            x, y = self._sample_non_overlapping_start()
+        for i, name in enumerate(self.sphere_names):
+            x, y = self._fixed_point(i)
             tx, ty = self._new_target(x, y)
             self.spheres[name] = {
                 "x": x,
@@ -146,14 +131,7 @@ class FiveSpheresRandomController:
             }
             self._apply_state(name, x, y, 0.0, 0.0, self.spheres[name]["yaw"])
 
-        rospy.loginfo(
-            "[five_spheres] Initialized %d spheres in area x:[%.2f, %.2f], y:[%.2f, %.2f]",
-            len(self.sphere_names),
-            self.area_x_min,
-            self.area_x_max,
-            self.area_y_min,
-            self.area_y_max,
-        )
+        rospy.loginfo("[deterministic_spheres] Initialized 9 spheres in fixed positions.")
 
     def _send_goal(self):
         goal = MoveBaseGoal()
@@ -162,13 +140,7 @@ class FiveSpheresRandomController:
         goal.target_pose.pose.position.x = self.goal_x
         goal.target_pose.pose.position.y = self.goal_y
         goal.target_pose.pose.orientation.w = 1.0
-
         self.move_base_client.send_goal(goal)
-        rospy.loginfo(
-            "[five_spheres] Goal sent: x=%.2f y=%.2f (straight above dynamic area)",
-            self.goal_x,
-            self.goal_y,
-        )
 
     def _apply_state(self, model_name, x, y, vx, vy, yaw):
         state = ModelState()
@@ -181,32 +153,26 @@ class FiveSpheresRandomController:
         state.twist.linear.x = vx
         state.twist.linear.y = vy
         state.reference_frame = "world"
-
         try:
             self.set_state(state)
         except rospy.ServiceException:
             pass
 
     def _model_states_callback(self, msg):
-        # Find robot in Gazebo model states and publish as Ground Truth
         robot_name = "robot" 
         if robot_name in msg.name:
             idx = msg.name.index(robot_name)
-            
             gt_odom = Odometry()
             gt_odom.header.stamp = rospy.Time.now()
             gt_odom.header.frame_id = "world"
             gt_odom.child_frame_id = "base_link"
             gt_odom.pose.pose = msg.pose[idx]
             gt_odom.twist.twist = msg.twist[idx]
-            
             self.robot_gt_pub.publish(gt_odom)
 
     def _social_forces(self, name, s):
         fx = 0.0
         fy = 0.0
-
-        # Inter-agent repulsion.
         for other_name, o in self.spheres.items():
             if other_name == name:
                 continue
@@ -216,19 +182,12 @@ class FiveSpheresRandomController:
             if d < 1e-4 or d > self.neighbor_radius:
                 continue
 
-            # Stronger push when too close.
             if d < self.separation_distance:
-                # Radial force (pushes them directly apart)
                 k_rad = self.separation_gain * (self.separation_distance - d) / self.separation_distance
-                
-                # Tangential force (makes them slide past each other instead of head-on collisions)
-                # We use a simple cross product rule to make them rotate around each other
                 k_tan = k_rad * 0.8
-                
                 fx += k_rad * (dx / d) - k_tan * (dy / d)
                 fy += k_rad * (dy / d) + k_tan * (dx / d)
 
-        # Boundary soft forces.
         dl = s["x"] - self.area_x_min
         dr = self.area_x_max - s["x"]
         db = s["y"] - self.area_y_min
@@ -242,16 +201,9 @@ class FiveSpheresRandomController:
             fy += self.wall_gain * (self.wall_buffer - db) / self.wall_buffer
         if dt < self.wall_buffer:
             fy -= self.wall_gain * (self.wall_buffer - dt) / self.wall_buffer
-
-        # Small random perturbation for less robotic trajectories.
-        fx += random.uniform(-self.noise_accel, self.noise_accel)
-        fy += random.uniform(-self.noise_accel, self.noise_accel)
         return fx, fy
 
     def _desired_velocity(self, s, now_t):
-        if now_t < s["pause_until"]:
-            return 0.0, 0.0
-
         dx = s["tx"] - s["x"]
         dy = s["ty"] - s["y"]
         dist = math.hypot(dx, dy)
@@ -260,9 +212,6 @@ class FiveSpheresRandomController:
             s["tx"], s["ty"] = self._new_target(s["x"], s["y"])
             s["pref_speed"] = self._new_speed()
             s["repath_at"] = self._new_repath_time(now_t)
-            if random.random() < self.pause_probability:
-                s["pause_until"] = now_t + random.uniform(self.pause_min, self.pause_max)
-                return 0.0, 0.0
             dx = s["tx"] - s["x"]
             dy = s["ty"] - s["y"]
             dist = max(1e-6, math.hypot(dx, dy))
@@ -272,14 +221,12 @@ class FiveSpheresRandomController:
         return ux * s["pref_speed"], uy * s["pref_speed"]
 
     def _enforce_bounds(self, s):
-        # Reflect gently from hard borders.
         if s["x"] < self.area_x_min:
             s["x"] = self.area_x_min
             s["vx"] = abs(s["vx"]) * 0.25
         elif s["x"] > self.area_x_max:
             s["x"] = self.area_x_max
             s["vx"] = -abs(s["vx"]) * 0.25
-
         if s["y"] < self.area_y_min:
             s["y"] = self.area_y_min
             s["vy"] = abs(s["vy"]) * 0.25
@@ -311,7 +258,7 @@ class FiveSpheresRandomController:
 
                 s["vx"] += ax * dt
                 s["vy"] += ay * dt
-
+                
                 v_norm = math.hypot(s["vx"], s["vy"])
                 if v_norm > self.speed_hard_cap:
                     scale = self.speed_hard_cap / v_norm
@@ -327,7 +274,6 @@ class FiveSpheresRandomController:
 
                 self._apply_state(name, s["x"], s["y"], s["vx"], s["vy"], s["yaw"])
 
-                # Publish Odometry for rosbag recording
                 odom = Odometry()
                 odom.header.stamp = rospy.Time.now()
                 odom.header.frame_id = "world"
@@ -346,7 +292,7 @@ class FiveSpheresRandomController:
 
 if __name__ == "__main__":
     try:
-        node = FiveSpheresRandomController()
+        node = NineSpheresDeterministicController()
         node.spin()
     except rospy.ROSInterruptException:
         pass

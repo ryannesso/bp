@@ -53,6 +53,18 @@ private:
   // --- ПАМЯТЬ ОБЪЕКТОВ ---
   std::map<int, ros::Time> passed_obstacles_;
 
+  struct TrackedObstacle {
+    int id;
+    tracked_obstacle_msgs::TrackedCircle circle;
+    ros::Time last_seen;
+  };
+  std::map<int, TrackedObstacle> obstacle_memory_;
+  int generateObstacleId();
+  int next_obstacle_id_ = 10000;
+
+  double obstacle_memory_duration_;
+  double prediction_horizon_;
+
   // ---------------------------------------------------------------------------
   // СТРУКТУРА ТРАЕКТОРИИ
   // ---------------------------------------------------------------------------
@@ -179,6 +191,22 @@ private:
   double safety_mult_unstable_;
   double safety_mult_ghost_;
   double safety_mult_ghost_unstable_;
+
+  // Штраф за угловую скорость (предотвращает повороты 360°).
+  // score -= rotation_cost_ * vth²
+  double rotation_cost_;
+
+  // Штраф за скорость сближения препятствия (relative approach velocity)
+  double approach_penalty_weight_;
+
+  // Горизонт времени для обнаружения 'коридора' столкновения
+  double corridor_predict_time_;
+
+  // Минимальная "крейсерская" скорость для успешного пересечения коридора
+  double corridor_cruising_speed_;
+
+  // Запас времени (с) для успешного проезда перед динамическим препятствием
+  double safe_crossing_margin_;
 };
 
 } // namespace improved_dwa_local_planner

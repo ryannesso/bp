@@ -19,7 +19,7 @@ class ExperimentOrchestrator:
 
         # --- KONFIGURÁCIA SCÉNY ---
         self.robot_name = "robot"         
-        self.sphere_name = "moving_sphere"
+        self.sphere_name = "moving_sphere_1"
         self.init_x = 0.0
         self.init_y = -5.978              # Старт робота в Gazebo
         

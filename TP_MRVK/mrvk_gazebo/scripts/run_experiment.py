@@ -19,7 +19,7 @@ class ExperimentOrchestrator:
 
         # --- 1. KONFIGURÁCIA ---
         self.robot_name = "robot"         
-        self.s1_name = "moving_sphere"    
+        self.s1_name = "moving_sphere_1"    
         self.s2_name = "moving_sphere_2"  
         
         self.init_x = 0.0

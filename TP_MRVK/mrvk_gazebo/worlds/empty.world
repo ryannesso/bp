@@ -16,5 +16,78 @@
       <real_time_update_rate>100</real_time_update_rate>
       <gravity>0 0 -9.8</gravity>
     </physics>
+
+    <!-- Boundary fence for spheres with passages for the robot (Scaled x2) -->
+    <model name="sphere_fence">
+      <static>true</static>
+      <link name="link">
+        <!-- North wall Left -->
+        <collision name="north_left">
+          <pose>-3.025 5.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+        </collision>
+        <visual name="north_left_visual">
+          <pose>-3.025 5.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grey</name></script></material>
+        </visual>
+
+        <!-- North wall Right -->
+        <collision name="north_right">
+          <pose>3.025 5.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+        </collision>
+        <visual name="north_right_visual">
+          <pose>3.025 5.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grey</name></script></material>
+        </visual>
+
+        <!-- South wall Left -->
+        <collision name="south_left">
+          <pose>-3.025 -3.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+        </collision>
+        <visual name="south_left_visual">
+          <pose>-3.025 -3.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grey</name></script></material>
+        </visual>
+
+        <!-- South wall Right -->
+        <collision name="south_right">
+          <pose>3.025 -3.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+        </collision>
+        <visual name="south_right_visual">
+          <pose>3.025 -3.6 0.25 0 0 0</pose>
+          <geometry><box><size>4.05 0.1 0.5</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grey</name></script></material>
+        </visual>
+
+        <!-- East wall -->
+        <collision name="east">
+          <pose>5.0 1.0 0.25 0 0 0</pose>
+          <geometry><box><size>0.1 9.3 0.5</size></box></geometry>
+        </collision>
+        <visual name="east_visual">
+          <pose>5.0 1.0 0.25 0 0 0</pose>
+          <geometry><box><size>0.1 9.3 0.5</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grey</name></script></material>
+        </visual>
+
+        <!-- West wall -->
+        <collision name="west">
+          <pose>-5.0 1.0 0.25 0 0 0</pose>
+          <geometry><box><size>0.1 9.3 0.5</size></box></geometry>
+        </collision>
+        <visual name="west_visual">
+          <pose>-5.0 1.0 0.25 0 0 0</pose>
+          <geometry><box><size>0.1 9.3 0.5</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Grey</name></script></material>
+        </visual>
+      </link>
+    </model>
+
   </world>
 </sdf>
