@@ -31,9 +31,6 @@ struct SpatialMemory {
   float x, y;
   float vx, vy;
   float radius;
-  ros::Time unstable_until;
-  ros::Time quarantine_until;
-  ros::Time first_seen;
   bool  updated_this_frame;
   int   id;
   int   tracker_id;
@@ -63,7 +60,6 @@ public:
     ros::NodeHandle pnh("~");
 
     pnh.param("speed_threshold",    speed_threshold_,    0.08);
-    pnh.param("ttl_duration",       ttl_duration_,       3.5);
     pnh.param("radius_buffer",      radius_buffer_,      0.4);
     pnh.param("proximity_threshold",proximity_threshold_, 0.3);
     pnh.param("max_tilt_angle",     max_tilt_angle_,     0.08);
@@ -71,13 +67,8 @@ public:
     pnh.param("max_cluster_span",   max_cluster_span_,   1.5);
     pnh.param("dilation_rays",      dilation_rays_,      3);
 
-    // Карантинные параметры
-    pnh.param("quarantine_duration", quarantine_duration_,  0.6);
-    pnh.param("quarantine_radius_mult", quarantine_radius_mult_, 2.0);
-
     // ── APPROACH 1: Агрессивная SLAM-фильтрация ──────────────────────────
     pnh.param("slam_radius_mult",         slam_radius_mult_,         3.0);  // множитель радиуса для SLAM
-    pnh.param("slam_ghost_ttl_mult",      slam_ghost_ttl_mult_,      2.0);  // множитель TTL призраков для SLAM
     pnh.param("slam_prediction_horizon",  slam_prediction_horizon_,  0.5);  // сек предиктивной экстраполяции
     pnh.param("slam_extra_dilation",      slam_extra_dilation_,      5);    // доп. лучей дилатации для SLAM
 
@@ -108,25 +99,22 @@ private:
   tf::TransformListener tf_listener_;
 
   double speed_threshold_;
-  double ttl_duration_;
   double radius_buffer_;
   double proximity_threshold_;
   double max_tilt_angle_;
   double gap_threshold_;
   double max_cluster_span_;
   int    dilation_rays_;
-  double quarantine_duration_;
-  double quarantine_radius_mult_;
 
   // Approach 1: SLAM-specific parameters
   double slam_radius_mult_;
-  double slam_ghost_ttl_mult_;
   double slam_prediction_horizon_;
   int    slam_extra_dilation_;
 
   // Approach 3: Delay buffer
   double slam_delay_;
   std::deque<BufferedScan> slam_buffer_;
+
 
   obstacle_detector::Obstacles       latest_obs_msg_;
   std::vector<SpatialMemory>         memories_;
@@ -255,7 +243,6 @@ private:
   // Build filter targets from current memories. Parameters control how
   // aggressively we filter:
   //   radius_scale   — multiplier for the effective radius
-  //   ghost_ttl_mult — how much longer to keep ghost targets
   //   prediction_sec — extra forward-prediction horizon (seconds)
   std::vector<FilterTarget> buildTargets(
       const sensor_msgs::LaserScan::ConstPtr &scan_in,
@@ -264,7 +251,6 @@ private:
       ros::Time scan_time,
       double dt_msg,
       float radius_scale,
-      float ghost_ttl_mult,
       float prediction_sec,
       std::vector<std::pair<float,float>> *out_dynamic_points = nullptr)
   {
@@ -300,56 +286,32 @@ private:
       }
 
       if (best_match != nullptr || is_moving) {
-        ros::Time new_unstable = ros::Time(0);
-
         if (best_match != nullptr) {
-          new_unstable = best_match->unstable_until;
-          float old_speed = std::hypot(best_match->vx, best_match->vy);
-          bool stopped    = !is_moving;
-          bool reversed   = (old_speed > 0.05f && speed > 0.05f &&
-                             (best_match->vx*vx + best_match->vy*vy < 0));
-          bool accelerated = (old_speed <= (float)speed_threshold_ && is_moving);
-
-          if (stopped || reversed || accelerated)
-            new_unstable = scan_time + ros::Duration(1.0);
-
-          best_match->last_seen         = scan_time;
-          best_match->x                 = cx;
-          best_match->y                 = cy;
-          best_match->vx                = vx;
-          best_match->vy                = vy;
-          best_match->radius            = r;
-          best_match->unstable_until    = new_unstable;
-          best_match->tracker_id        = circle.id;
+          best_match->last_seen          = scan_time;
+          best_match->x                  = cx;
+          best_match->y                  = cy;
+          best_match->vx                 = vx;
+          best_match->vy                 = vy;
+          best_match->radius             = r;
+          best_match->tracker_id         = circle.id;
           best_match->updated_this_frame = true;
         } else {
           SpatialMemory nm;
-          nm.last_seen         = scan_time;
-          nm.first_seen        = scan_time;
-          nm.x                 = cx;
-          nm.y                 = cy;
-          nm.vx                = vx;
-          nm.vy                = vy;
-          nm.radius            = r;
-          nm.unstable_until    = scan_time + ros::Duration(1.0);
-          nm.quarantine_until  = scan_time + ros::Duration(quarantine_duration_);
+          nm.last_seen          = scan_time;
+          nm.x                  = cx;
+          nm.y                  = cy;
+          nm.vx                 = vx;
+          nm.vy                 = vy;
+          nm.radius             = r;
           nm.updated_this_frame = true;
-          nm.id                = memory_id_counter_++;
-          nm.tracker_id        = circle.id;
+          nm.id                 = memory_id_counter_++;
+          nm.tracker_id         = circle.id;
           memories_.push_back(nm);
           best_match = &memories_.back();
         }
 
         // Эффективный радиус фильтрации
         float effective_radius = r + std::min(speed * 0.3f, 0.4f);
-
-        // Нестабильность
-        if (scan_time < new_unstable)
-          effective_radius += 0.15f;
-
-        // Карантин
-        if (best_match != nullptr && scan_time < best_match->quarantine_until)
-          effective_radius *= (float)quarantine_radius_mult_;
 
         // Применяем масштаб (для SLAM будет radius_scale > 1)
         effective_radius *= radius_scale;
@@ -372,35 +334,6 @@ private:
           }
         }
       }
-    }
-
-    // ── Призраки ──
-    double effective_ghost_ttl = ttl_duration_ * ghost_ttl_mult;
-    for (auto it = memories_.begin(); it != memories_.end(); ) {
-      if (!it->updated_this_frame) {
-        double elapsed = std::max(0.0, (scan_time - it->last_seen).toSec());
-        if (elapsed > effective_ghost_ttl) {
-          // Только основной поток (ghost_ttl_mult == 1) удаляет из памяти
-          if (ghost_ttl_mult <= 1.01f) {
-            it = memories_.erase(it);
-            continue;
-          }
-          ++it;
-          continue;
-        } else {
-          geometry_msgs::Point p;
-          p.x = it->x + it->vx * elapsed;
-          p.y = it->y + it->vy * elapsed;
-          float x1, y1;
-          if (transformPointToLaser(p, obs_frame, laser_frame, scan_time, x1, y1)) {
-            float ghost_radius = (it->radius + (float)radius_buffer_ * 1.5f) * radius_scale;
-            targets.push_back({x1, y1, x1, y1, ghost_radius});
-            if (out_dynamic_points)
-              out_dynamic_points->emplace_back(x1, y1);
-          }
-        }
-      }
-      ++it;
     }
 
     return targets;
@@ -438,10 +371,17 @@ private:
     std::vector<std::pair<float,float>> dynamic_points;
     std::vector<FilterTarget> costmap_targets = buildTargets(
         scan_in, laser_frame, obs_frame, scan_time, dt_msg,
-        1.0f,   // radius_scale = 1 (нормальный)
-        1.0f,   // ghost_ttl_mult = 1 (нормальный)
-        0.0f,   // prediction = 0 (нет доп. предикции)
+      1.0f,   // radius_scale = 1 (нормальный)
+      0.0f,   // prediction = 0 (нет доп. предикции)
         &dynamic_points);
+
+    for (auto it = memories_.begin(); it != memories_.end(); ) {
+      if (!it->updated_this_frame) {
+        it = memories_.erase(it);
+        continue;
+      }
+      ++it;
+    }
 
     // ── ЭТАП 2: Фильтрация для COSTMAP ───────────────────────────────────
     sensor_msgs::LaserScan scan_out = *scan_in;
@@ -494,14 +434,6 @@ private:
       // Базовый радиус с агрессивным запасом
       float effective_radius = m.radius + std::min(speed * 0.3f, 0.4f);
 
-      // Карантин — ещё больший множитель для SLAM
-      if (scan_time < m.quarantine_until)
-        effective_radius *= (float)quarantine_radius_mult_ * 1.5f;
-
-      // Нестабильность
-      if (scan_time < m.unstable_until)
-        effective_radius += 0.25f;
-
       geometry_msgs::Point p_start;
       p_start.x = m.x;
       p_start.y = m.y;
@@ -519,24 +451,6 @@ private:
       if (transformPointToLaser(p_start, obs_frame, laser_frame, scan_time, x1, y1) &&
           transformPointToLaser(p_end,   obs_frame, laser_frame, scan_time, x2, y2)) {
         targets.push_back({x1, y1, x2, y2, effective_radius});
-      }
-    }
-
-    // Призраки с увеличенным TTL для SLAM
-    double effective_ghost_ttl = ttl_duration_ * slam_ghost_ttl_mult_;
-    for (const auto &m : memories_) {
-      if (m.updated_this_frame) continue;
-      double elapsed = std::max(0.0, (scan_time - m.last_seen).toSec());
-      if (elapsed > effective_ghost_ttl) continue;
-
-      geometry_msgs::Point p;
-      p.x = m.x + m.vx * elapsed;
-      p.y = m.y + m.vy * elapsed;
-      p.z = 0;
-      float x1, y1;
-      if (transformPointToLaser(p, obs_frame, laser_frame, scan_time, x1, y1)) {
-        float ghost_radius = m.radius + (float)radius_buffer_ * 2.0f;
-        targets.push_back({x1, y1, x1, y1, ghost_radius});
       }
     }
 
@@ -641,8 +555,7 @@ private:
     msg.header.frame_id = frame;
 
     for (const auto &m : memories_) {
-      bool   is_ghost = !m.updated_this_frame;
-      double elapsed  = is_ghost ? std::max(0.0, (stamp - m.last_seen).toSec()) : 0.0;
+      double elapsed  = 0.0;
 
       tracked_obstacle_msgs::TrackedCircle tc;
       tc.center.x      = m.x + m.vx * (float)elapsed;
@@ -653,8 +566,8 @@ private:
       tc.velocity.z    = 0;
       tc.radius        = m.radius;
       tc.id            = m.tracker_id;
-      tc.is_ghost      = is_ghost;
-      tc.is_unstable   = (stamp < m.unstable_until);
+      tc.is_ghost      = false;
+      tc.is_unstable   = false;
       tc.memory_id     = m.id;
       tc.time_since_seen = (float)elapsed;
       msg.circles.push_back(tc);
@@ -728,21 +641,8 @@ private:
       text.scale.z         = 0.4;
       text.color.a         = 1.0;
 
-      bool in_quarantine = (stamp < mem.quarantine_until);
-
-      if (!mem.updated_this_frame) {
-        text.color.r = 0.6; text.color.g = 0.6; text.color.b = 0.6;
-        text.text = "[GHOST] ID:" + std::to_string(mem.id);
-      } else if (in_quarantine) {
-        text.color.r = 1.0; text.color.g = 0.0; text.color.b = 1.0;
-        text.text = "[QUARANTINE] ID:" + std::to_string(mem.id);
-      } else if (stamp < mem.unstable_until) {
-        text.color.r = 1.0; text.color.g = 0.3; text.color.b = 0.0;
-        text.text = "[UNSTABLE] ID:" + std::to_string(mem.id);
-      } else {
-        text.color.r = 0.0; text.color.g = 1.0; text.color.b = 0.0;
-        text.text = "[OK] ID:" + std::to_string(mem.id);
-      }
+      text.color.r = 0.0; text.color.g = 1.0; text.color.b = 0.0;
+      text.text = "[OK] ID:" + std::to_string(mem.id);
       msg.markers.push_back(text);
     }
     viz_pub_.publish(msg);

@@ -1,0 +1,14 @@
+Bag: cohead.bag
+Duration_s: 42.05
+Min_distance_m: 0.744
+Collision: False
+Collision_time_s: 0.00
+Collision_pct: 0.00
+Unsafe_time_s: 0.00
+Unsafe_pct: 0.00
+Avg_linear_v: 0.405
+Max_linear_v: 0.935
+Avg_abs_angular_w: 0.169
+Closest_sphere_id: 1
+Closest_sphere_min_m: 0.744
+Experiment_success: True

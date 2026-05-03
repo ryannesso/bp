@@ -65,6 +65,12 @@ private:
   double obstacle_memory_duration_;
   double prediction_horizon_;
 
+  enum RejectReason {
+    REJECT_NONE = 0,
+    REJECT_STATIC = 1,
+    REJECT_DYNAMIC = 2
+  };
+
   // ---------------------------------------------------------------------------
   // СТРУКТУРА ТРАЕКТОРИИ
   // ---------------------------------------------------------------------------
@@ -79,9 +85,14 @@ private:
     
     // Debug variables
     double debug_alpha = 0.0;
+    double debug_path = 0.0;
+    double debug_heading = 0.0;
+    double debug_velocity = 0.0;
+    double debug_min_safety = 0.0;
     double debug_turning_bonus = 0.0;
     double debug_speed_bonus = 0.0;
     std::string debug_state = "IDLE";
+    RejectReason reject_reason = REJECT_NONE;
   };
 
   // ---------------------------------------------------------------------------
@@ -207,6 +218,18 @@ private:
 
   // Запас времени (с) для успешного проезда перед динамическим препятствием
   double safe_crossing_margin_;
+
+  // Запас (м), после которого коридор перестает штрафовать траекторию
+  double corridor_clear_margin_;
+
+  // Разрешить fallback на менее безопасную траекторию при отсутствии валидных
+  bool allow_dynamic_fallback_;
+
+  // Масштаб скорости fallback-траектории
+  double fallback_speed_scale_;
+
+  // Минимальная безопасность для выбора fallback-траектории
+  double fallback_min_safety_;
 };
 
 } // namespace improved_dwa_local_planner

@@ -1,0 +1,14 @@
+Bag: corridor.b_dwa.bag
+Duration_s: 22.61
+Min_distance_m: 0.024
+Collision: True
+Collision_time_s: 1.58
+Collision_pct: 7.00
+Unsafe_time_s: 1.88
+Unsafe_pct: 8.32
+Avg_linear_v: 0.304
+Max_linear_v: 0.623
+Avg_abs_angular_w: 0.176
+Closest_sphere_id: 1
+Closest_sphere_min_m: 0.024
+Experiment_success: False

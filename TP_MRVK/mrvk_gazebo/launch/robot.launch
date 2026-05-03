@@ -1,19 +1,19 @@
 <launch>
     <!-- 0. ARGUMENTY -->
     <arg name="test_name" default="imrp_1_obst_1"/>
-    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/empty.world"/>
+    <arg name="world_file" default="$(find mrvk_gazebo)/worlds/example.world"/>
     
     <!-- Súradnice štartu robota -->
     <!-- x: 190.456985 y: -273.546978 z: -0.415242 yaw: 3.062555 for baylands-->
     <!-- x: 0.325792 y: -4.379866 z: 0.164960 yaw: 1.568965 for example-->
-    <arg name="init_x" default="-0.205792"/>
+    <arg name="init_x" default="-0.175792"/>
     <arg name="init_y" default="-4.379866"/>
     <arg name="init_z" default="0.164960"/>
     <arg name="init_yaw" default="1.568965"/>
 
     <!-- Cieľ robota -->
     <arg name="goal_x" default="11.421"/>
-    <arg name="goal_y" default="-0.054"/> <!-- head (x,y): 11.421 -0.054-->
+    <arg name="goal_y" default="0.914"/> <!-- head (x,y): 11.421 -0.054-->
 
     <!-- <node name="rqt_robot_steering" pkg="rqt_robot_steering" type="rqt_robot_steering">
         <param name="default_topic" value="/shoddy/cmd_vel"/>
@@ -69,13 +69,13 @@
     <node name="obstacle_tracker" pkg="obstacle_detector" type="obstacle_tracker_node">
         <param name="active"                  value="true"/>
         <param name="loop_rate"               value="100.0"/>
-        <param name="tracking_duration"       value="3.0"/>
+        <param name="tracking_duration"       value="1.0"/>
         <param name="frame_id"                value="odom"/>
         <remap from="tracked_obstacles" to="obstacles"/>
     </node>
 
     <!-- 5. SCAN CLEANER (Vlastný C++ uzol) -->
-    <!-- <node pkg="dynamic_filter" type="scan_cleaner_node" name="scan_cleaner_node" output="screen">
+    <node pkg="dynamic_filter" type="scan_cleaner_node" name="scan_cleaner_node" output="screen">
         <remap from="/scan" to="/scan_filtered"/>
         <remap from="/scan_filtered" to="/scan_cleaned"/>
         <param name="speed_threshold" value="0.08"/>      
@@ -83,7 +83,7 @@
         <param name="radius_buffer" value="0.4"/>        
         <param name="proximity_threshold" value="0.3"/>   
         <param name="max_tilt_angle" value="0.20"/>       
-    </node> -->
+    </node>
 
 
     <!-- 6. ШЁЛКОВЫЙ SLAM: Баланс идеальной одометрии и полной карты в ОДНОМ узле.
@@ -93,7 +93,7 @@
       <param name="odom_frame" value="odom"/>      
       <param name="map_frame" value="map"/>
       <param name="base_frame" value="base_link"/> 
-      <remap from="scan" to="/scan_filtered"/> <!-- Видит ВСЁ для карты -->
+      <remap from="scan" to="/scan_cleaned"/> <!-- Видит ВСЁ для карты -->
       <remap from="odom" to="/odometry/filtered"/>
     </node>
 
@@ -151,10 +151,10 @@
 
     <!-- <node pkg="mrvk_gazebo" type="move_sphere.py" name="move_sphere_controller" output="screen" /> -->
 
-    <node pkg="gazebo_ros" type="spawn_model" name="moving_sphere_2"
-          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" />
+    <!-- <node pkg="gazebo_ros" type="spawn_model" name="moving_sphere_2"
+          args="-urdf -model moving_sphere_2 -param sphere_description -x 3.0 -y 1.5 -z 0.3" /> -->
 
-    <node pkg="gazebo_ros" type="spawn_model" name="moving_sphere_3"
+    <!-- <node pkg="gazebo_ros" type="spawn_model" name="moving_sphere_3"
           args="-urdf -model moving_sphere_3 -param sphere_description -x 1.0 -y 3.0 -z 0.3" />
 
     <node pkg="gazebo_ros" type="spawn_model" name="moving_sphere_4"
@@ -173,10 +173,10 @@
           args="-urdf -model moving_sphere_8 -param sphere_description -x 7.0 -y 2.0 -z 0.3" /> 
 
     <node pkg="gazebo_ros" type="spawn_model" name="moving_sphere_9"
-          args="-urdf -model moving_sphere_9 -param sphere_description -x 7.0 -y 2.0 -z 0.3" />     
+          args="-urdf -model moving_sphere_9 -param sphere_description -x 7.0 -y 2.0 -z 0.3" />      -->
 
 
-    <node pkg="mrvk_gazebo" type="run_9_spheres_not_random.py" name="experiment_master" output="screen">
+    <node pkg="mrvk_gazebo" type="head.py" name="experiment_master" output="screen">
         <param name="goal_x" value="$(arg goal_x)" />
         <param name="goal_y" value="$(arg goal_y)" />
     </node>  

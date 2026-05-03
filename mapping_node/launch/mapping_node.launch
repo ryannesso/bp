@@ -1,6 +1,0 @@
-<launch>
-  <node pkg="mapping_node" type="mapping_node" name="mapping_node" output="screen">
-    <remap from="/cloud" to="/your_cloud_topic" />
-    <remap from="/odom" to="/your_odom_topic" />
-  </node>
-</launch>

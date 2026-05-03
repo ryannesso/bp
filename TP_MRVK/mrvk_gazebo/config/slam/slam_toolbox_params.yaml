@@ -18,7 +18,8 @@ loop_closure_search_radius: 0.1
 
 # === ПАРАМЕТРЫ СКАНИРОВАНИЯ ===
 # scan ремаппится в robot.launch, но тут прописано явно:
-scan_topic: /scan_filtered
+scan_topic: /scan_cleaned 
+#scan_filtered
 minimum_travel_distance: 0.15
 minimum_travel_heading: 0.15
 scan_buffer_size: 150

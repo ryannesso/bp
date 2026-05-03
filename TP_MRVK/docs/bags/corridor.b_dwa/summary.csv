@@ -1,0 +1,2 @@
+bag,duration_s,min_distance_m,collision,collision_time_s,collision_pct,unsafe_time_s,unsafe_pct,avg_linear_v,max_linear_v,avg_abs_angular_w,closest_sphere_id,closest_sphere_min_m,experiment_success
+corridor.b_dwa.bag,22.61,0.024,True,1.58,7.00,1.88,8.32,0.304,0.623,0.176,1,0.024,False

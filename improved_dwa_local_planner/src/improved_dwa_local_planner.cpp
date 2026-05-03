@@ -291,6 +291,10 @@ void ImprovedDWALocalPlanner::initialize(
     private_nh.param("corridor_predict_time", corridor_predict_time_, 8.0);
     private_nh.param("corridor_cruising_speed", corridor_cruising_speed_, 0.15);
     private_nh.param("safe_crossing_margin", safe_crossing_margin_, 0.8);
+    private_nh.param("corridor_clear_margin", corridor_clear_margin_, 0.15);
+    private_nh.param("allow_dynamic_fallback", allow_dynamic_fallback_, true);
+    private_nh.param("fallback_speed_scale", fallback_speed_scale_, 0.35);
+    private_nh.param("fallback_min_safety", fallback_min_safety_, 0.05);
 
     odom_helper_.setOdomTopic("odom");
     initialized_ = true;
@@ -397,6 +401,10 @@ bool ImprovedDWALocalPlanner::computeVelocityCommands(
 
   Trajectory best_traj;
   best_traj.cost = -1.0;
+  Trajectory best_fallback_traj;
+  best_fallback_traj.cost = -1.0;
+  bool has_fallback = false;
+  double best_fallback_score = -1e9;
   std::vector<Trajectory> all_trajectories;
 
   double dvx = (vx_samples_ > 1) ? (max_vx - min_vx) / (vx_samples_ - 1) : 0.01;
@@ -410,6 +418,24 @@ bool ImprovedDWALocalPlanner::computeVelocityCommands(
         continue;
 
       traj.cost = scoreTrajectory(traj, local_plan);
+      if (traj.cost < 0.0 && traj.reject_reason == REJECT_DYNAMIC) {
+        if (traj.debug_min_safety >= fallback_min_safety_) {
+          double fallback_score =
+              (alpha_ * (traj.debug_path + traj.debug_heading)) +
+              (gamma_ * traj.debug_velocity) -
+              (rotation_cost_ * traj.vth * traj.vth);
+          double safety_term = (traj.debug_min_safety < 0.3)
+                                   ? traj.debug_min_safety
+                                   : 0.3;
+          fallback_score += epsilon_ * safety_term;
+
+          if (!has_fallback || fallback_score > best_fallback_score) {
+            best_fallback_score = fallback_score;
+            best_fallback_traj = traj;
+            has_fallback = true;
+          }
+        }
+      }
       all_trajectories.push_back(traj);
 
       if (traj.cost >= 0.0 && traj.cost > best_traj.cost)
@@ -420,6 +446,23 @@ bool ImprovedDWALocalPlanner::computeVelocityCommands(
   publishMarkers(all_trajectories);
 
   if (best_traj.cost < 0) {
+    if (allow_dynamic_fallback_ && has_fallback) {
+      cmd_vel.linear.x = best_fallback_traj.vx * fallback_speed_scale_;
+      cmd_vel.angular.z = best_fallback_traj.vth * fallback_speed_scale_;
+
+      nav_msgs::Path local_path;
+      local_path.header.stamp = ros::Time::now();
+      local_path.header.frame_id = costmap_ros_->getGlobalFrameID();
+      local_path.poses = best_fallback_traj.poses;
+      local_plan_pub_.publish(local_path);
+
+      ROS_WARN_THROTTLE(1.0,
+                        "[DWA] Fallback traj used | V=%.2f W=%.2f | Score=%.3f",
+                        cmd_vel.linear.x, cmd_vel.angular.z,
+                        best_fallback_score);
+      publishTrackedObstaclesViz();
+      return true;
+    }
     cmd_vel.linear.x = 0;
     cmd_vel.angular.z = 0;
     return false;
@@ -464,6 +507,7 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
 
     if (pt_cost < 0 || pt_cost >= 253) {
       traj.collision_pose_idx = (int)i;
+      traj.reject_reason = REJECT_STATIC;
       return -1.0;
     }
     if (pt_cost > max_footprint_cost)
@@ -493,6 +537,8 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
       tf2::getYaw(traj.poses.back().pose.orientation),
       tf2::getYaw(local_plan[closest_idx].pose.orientation)));
   double heading_score = (M_PI - angle_diff) / M_PI;
+  traj.debug_path = path_dist_score;
+  traj.debug_heading = heading_score;
 
   // 3. Штраф за близость к статическим препятствиям (Beta)
   double dist_score =
@@ -512,6 +558,7 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
     double desired_vel = max_vel_x_ * (dist_to_goal / 1.0);
     velocity_score = 1.0 - (std::abs(traj.vx - desired_vel) / max_vel_x_);
   }
+  traj.debug_velocity = velocity_score;
 
   // 5. ДИНАМИЧЕСКИЙ АНАЛИЗ С УЛУЧШЕНИЯМИ
   double min_safety_score = 1.0;
@@ -590,7 +637,11 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
   }
 
   // Жёсткая блокировка при критической близости
-  if (min_safety_score < 0.02) {
+  const double hard_safety_reject = 0.003;
+  if (min_safety_score < hard_safety_reject) {
+    traj.debug_min_safety = min_safety_score;
+    traj.debug_alpha = min_safety_score;
+    traj.reject_reason = REJECT_DYNAMIC;
     return -100.0 + min_safety_score;
   }
 
@@ -603,6 +654,7 @@ double ImprovedDWALocalPlanner::scoreTrajectory(
   traj.debug_turning_bonus = -rotation_penalty;
   traj.debug_speed_bonus = -approach_penalty;
   traj.debug_alpha = min_safety_score;
+  traj.debug_min_safety = min_safety_score;
   traj.debug_state = (critical_obs != nullptr) ? "DYN_AVOID" : "IDLE";
 
   return (alpha_ * (path_dist_score + heading_score)) +
@@ -777,6 +829,10 @@ double ImprovedDWALocalPlanner::calculate_dis_fp(
       return (0.35 + 0.65 * std::pow(score, 2)) * 0.75;
     }
     return 0.35 + 0.65 * std::pow(score, 2);
+  }
+
+  if (corridor_hit && min_dist > (soft_limit + corridor_clear_margin_)) {
+    return 1.0;
   }
 
   // Штраф за дальний коридор применяется всегда

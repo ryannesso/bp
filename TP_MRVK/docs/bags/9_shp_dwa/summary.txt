@@ -1,0 +1,14 @@
+Bag: 9_shp_dwa.bag
+Duration_s: 37.34
+Min_distance_m: 0.449
+Collision: True
+Collision_time_s: 2.02
+Collision_pct: 5.41
+Unsafe_time_s: 3.62
+Unsafe_pct: 9.70
+Avg_linear_v: 0.313
+Max_linear_v: 0.707
+Avg_abs_angular_w: 0.101
+Closest_sphere_id: 4
+Closest_sphere_min_m: 0.449
+Experiment_success: False

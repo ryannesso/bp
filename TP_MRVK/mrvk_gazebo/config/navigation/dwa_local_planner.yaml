@@ -41,6 +41,9 @@ DWAPlannerROS:
   scaling_speed: 0.25
   max_scaling_factor: 0.2
 
+  publish_traj_pc: true
+  publish_cost_grid_pc: true
+
   # --- 4. Достижение цели (СИНХРОНИЗИРОВАНО) ---
   xy_goal_tolerance: 0.35   # Как в Improved
   yaw_goal_tolerance: 0.5   # Как в Improved
